@@ -3,6 +3,7 @@
 namespace massage_motion
 {
 
+// 集中维护日志字符串，避免调用方重复编写相同的 switch 语句。
 std::string to_string(MotionType motion_type)
 {
   switch (motion_type) {
@@ -38,4 +39,3 @@ std::string to_string(MotionError error)
 }
 
 }  // namespace massage_motion
-
