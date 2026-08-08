@@ -1,3 +1,10 @@
+/**
+ * @file motion_validation.hpp
+ * @brief 只进行与具体机械臂无关的静态校验。
+ *        TF 是否存在、关节数量是否匹配、
+ *        目标是否可达，应留给后续 MoveIt 规划器判断
+ */
+
 #ifndef MASSAGE_MOTION__MOTION_VALIDATION_HPP_
 #define MASSAGE_MOTION__MOTION_VALIDATION_HPP_
 

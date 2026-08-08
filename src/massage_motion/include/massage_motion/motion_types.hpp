@@ -1,3 +1,9 @@
+/**
+ * @file motion_types.hpp
+ * @brief 定义项目运动 SDK 的公共语言
+ * @author XieFField
+ */
+
 #ifndef MASSAGE_MOTION__MOTION_TYPES_HPP_
 #define MASSAGE_MOTION__MOTION_TYPES_HPP_
 

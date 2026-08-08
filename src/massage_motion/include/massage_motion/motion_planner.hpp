@@ -1,3 +1,9 @@
+/**
+ * @file motion_planner.hpp
+ * @brief 规划器接口
+ *        plan只负责生成轨迹，不允许在规划器内部执行轨迹。
+ */
+
 #ifndef MASSAGE_MOTION__MOTION_PLANNER_HPP_
 #define MASSAGE_MOTION__MOTION_PLANNER_HPP_
 
