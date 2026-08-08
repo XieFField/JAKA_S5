@@ -45,8 +45,21 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
     move_group_->setMaxAccelerationScalingFactor(request.acceleration_scale);
     move_group_->setPlanningTime(request.planning_timeout);
 
+    //设置MotionTarget给Moveit
+    const auto target_result = this->configure_target(request);
 
-    this->configure_target();
+    if (!target_result.valid)
+    {
+        return {
+            false,
+            target_result.error,
+            0,
+            target_result.message,
+            moveit_msgs::msg::RobotTrajectory{},
+            0.0,
+            this->planner_id()
+        };
+    }
 
     MoveGroupInterface::Plan moveit_plan;
 

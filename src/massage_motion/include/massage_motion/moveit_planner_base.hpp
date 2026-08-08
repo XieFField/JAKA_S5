@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 #include "moveit/move_group_interface/move_group_interface.h"
@@ -24,7 +25,7 @@ public:
 
 protected:
     virtual void supported_motion_types(std::vector<MotionType> & types);
-    
+
     virtual std::string planner_id() = 0; //返回 ptp lin circ
 
     virtual ValidationResult configure_target(
@@ -35,21 +36,19 @@ private:
     std::shared_ptr<MoveGroupInterface> move_group_;
 
     PlannerConfig planner_config_;
-    const rclcpp::Node::SharedPtr & logger_;
+    rclcpp::Logger logger_;
 public:
-    MoveItPlannerBase(const rclcpp::Node::SharedPtr & node,
-        PlannerConfig planner_config
-    ) 
-        : logger_ (node->get_logger()), 
-        planner_config_(planner_config)
+    MoveItPlannerBase(
+    const rclcpp::Node::SharedPtr & node,
+    PlannerConfig planner_config)
+    : planner_config_(std::move(planner_config)),
+      logger_(node->get_logger())
     {
         move_group_ = 
             std::make_shared<MoveGroupInterface>(
                 node, 
                 planner_config_.planning_group
-            )
-        
-        ;
+            );
     }
 };
 
