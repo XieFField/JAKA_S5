@@ -20,6 +20,10 @@ add_executable(lin_planning_demo
   src/lin_planning_demo.cpp
 )
 
+add_executable(circ_planning_demo
+  src/circ_planning_demo.cpp
+)
+
 target_compile_features(
   ptp_planning_demo 
   PUBLIC cxx_std_17
@@ -31,7 +35,10 @@ ament_target_dependencies(ptp_planning_demo
 
 ament_target_dependencies(lin_planning_demo
   rclcpp
+)
 
+ament_target_dependencies(circ_planning_demo
+  rclcpp
 )
 
 # add library
@@ -41,6 +48,7 @@ add_library(${PROJECT_NAME}
   src/moveit_planner_base.cpp
   src/ptp_planner.cpp
   src/lin_planner.cpp
+  src/circ_planner.cpp
 )
 
 target_link_libraries(ptp_planning_demo
@@ -48,6 +56,10 @@ target_link_libraries(ptp_planning_demo
 )
 
 target_link_libraries(lin_planning_demo
+  ${PROJECT_NAME}
+)
+
+target_link_libraries(circ_planning_demo
   ${PROJECT_NAME}
 )
 
@@ -96,6 +108,7 @@ install(
   TARGETS 
     ptp_planning_demo
     lin_planning_demo
+    circ_planning_demo
   DESTINATION lib/${PROJECT_NAME}
 )
 
