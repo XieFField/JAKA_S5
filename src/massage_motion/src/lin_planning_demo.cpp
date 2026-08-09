@@ -42,7 +42,7 @@ int main(int argc, char ** argv)
     request.request_id = "lin_demo_001";
     PoseTarget pose_target;
     pose_target.pose.header.frame_id = "world";
-    pose_target.pose.pose.position.x = 0.598761369855;
+    pose_target.pose.pose.position.x = 0.748761369855;
     pose_target.pose.pose.position.y = -0.003724931204;
     pose_target.pose.pose.position.z = 0.21;
 
