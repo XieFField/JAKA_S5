@@ -49,6 +49,7 @@ add_library(${PROJECT_NAME}
   src/ptp_planner.cpp
   src/lin_planner.cpp
   src/circ_planner.cpp
+  src/motion_planning_sdk.cpp
 )
 
 target_link_libraries(ptp_planning_demo
