@@ -1,7 +1,5 @@
 #include "massage_motion/ptp_planner.hpp"
 
-#include <variant>
-
 namespace massage_motion
 {
 

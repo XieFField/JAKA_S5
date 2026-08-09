@@ -1,5 +1,7 @@
-#ifndef MASSAGE_MOTION__PTP_PLANNER_HPP_
-#define MASSAGE_MOTION__PTP_PLANNER_HPP_
+#ifndef LIN_PLANNER_HPP_
+#define LIN_PLANNER_HPP_
+
+#pragma once
 
 #include <string>
 #include <variant>
@@ -8,8 +10,7 @@
 namespace massage_motion
 {
 
-// 配置 Pilz PTP 目标；公共校验和规划流程由 MoveItPlannerBase 负责。
-class PtpPlanner : public MoveItPlannerBase
+class LinPlanner : public MoveItPlannerBase
 {
 public:
     using MoveItPlannerBase::MoveItPlannerBase;
@@ -20,8 +21,11 @@ protected:
 
     ValidationResult configure_target(
         const MotionRequest & request) override;
+
+private:
+
 };
 
-}  // namespace massage_motion
+}
 
-#endif  // MASSAGE_MOTION__PTP_PLANNER_HPP_
+#endif // LIN_PLANNER_HPP_

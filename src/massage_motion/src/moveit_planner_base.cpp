@@ -55,8 +55,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
     move_group_->setStartStateToCurrentState();
 
     // 应用 PlannerConfig 中的配置
-    move_group_->setPlannerId(planner_id().c_str());
     move_group_->setPlanningPipelineId(planner_config_.planning_pipeline);
+    move_group_->setPlannerId(planner_id());
     move_group_->setEndEffectorLink(planner_config_.end_effector_link);
     move_group_->setPoseReferenceFrame(planner_config_.reference_frame);
 

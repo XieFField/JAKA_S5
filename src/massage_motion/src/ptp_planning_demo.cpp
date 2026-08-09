@@ -43,17 +43,31 @@ int main(int argc, char ** argv)
         // 设置关节目标
         request.motion_type = MotionType::kPtp;
         request.request_id = "ptp_demo_001";
-        JointTarget joint_target;
-        joint_target.positions = {
-            0.0,
-            1.5707,
-            -1.5707,
-            1.5707,
-            1.5707,
-            0.0
-        };
-        request.target = joint_target;
+        // JointTarget joint_target;
 
+        // joint_target.positions = {
+        //     0.0,
+        //     1.407,
+        //     -1.5707,
+        //     1.5707,
+        //     1.5707,
+        //     0.0
+        // };
+
+        // request.target = joint_target;
+
+        PoseTarget pose_target;
+        pose_target.pose.header.frame_id = "world";
+        pose_target.pose.pose.position.x = 0.798761369855;
+        pose_target.pose.pose.position.y = -0.003724931204;
+        pose_target.pose.pose.position.z = 0.106382015840;
+
+        pose_target.pose.pose.orientation.x = 0.707108079859;
+        pose_target.pose.pose.orientation.y = -0.000000008619;
+        pose_target.pose.pose.orientation.z = 0.000000008627;
+        pose_target.pose.pose.orientation.w = 0.707105482511;
+
+        request.target = pose_target;
         auto plan_result = ptp_planner.plan(request);
 
         if(plan_result.success)
