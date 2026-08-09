@@ -27,6 +27,26 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
             this->planner_id().c_str()
         };
     }
+    // 检查请求的运动类型是否受支持
+    if(request.motion_type != this->supported_motion_type())
+    {
+        RCLCPP_INFO(
+            this->logger_,
+            "[Motion request fail] 错误码:%d, 错误信息:%s",
+            static_cast<std::int32_t>(MotionError::kUnsupportedMotion),
+            "不支持的运动类型"
+        );
+
+        return {
+            false,
+            MotionError::kUnsupportedMotion,
+            0,
+            "不支持的运动类型",
+            moveit_msgs::msg::RobotTrajectory{},
+            0.0,
+            this->planner_id().c_str()
+        };
+    }
 
     // 清除上一次的目标和路径约束
     move_group_->clearPoseTargets();
@@ -99,7 +119,7 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
         return {
             false,
             MotionError::kEmptyTrajectory,
-            static_cast<std::int32_t>(MotionError::kEmptyTrajectory),
+            error_code.val,
             "规划结果为空轨迹",
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
@@ -116,11 +136,6 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
         moveit_plan.planning_time_,
         this->planner_id().c_str()
     };
-}
-
-void MoveItPlannerBase::supported_motion_types(std::vector<MotionType> & types)
-{
-    types = {MotionType::kPtp, MotionType::kLin, MotionType::kCirc};
 }
 
 }

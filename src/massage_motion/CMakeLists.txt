@@ -11,11 +11,27 @@ find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 
+# demo
+add_executable(ptp_planning_demo
+  src/ptp_planning_demo.cpp
+)
+
+target_compile_features(ptp_planning_demo PUBLIC cxx_std_17)
+
+ament_target_dependencies(ptp_planning_demo
+  rclcpp
+)
+
 # add library
 add_library(${PROJECT_NAME}
   src/motion_types.cpp
   src/motion_validation.cpp
   src/moveit_planner_base.cpp
+  src/ptp_planner.cpp
+)
+
+target_link_libraries(ptp_planning_demo
+  ${PROJECT_NAME}
 )
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
@@ -51,10 +67,17 @@ install(
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 ament_export_dependencies(
-  geometry_msgs 
+  geometry_msgs
   moveit_msgs
-  rclcpp 
+  rclcpp
   moveit_ros_planning_interface
+)
+
+
+#demo install
+install(
+  TARGETS ptp_planning_demo
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()

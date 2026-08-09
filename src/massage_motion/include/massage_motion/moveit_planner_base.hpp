@@ -24,13 +24,16 @@ public:
     PlanResult plan(const MotionRequest & request) override;
 
 protected:
-    virtual void supported_motion_types(std::vector<MotionType> & types);
+    // 返回当前具体规划器唯一支持的动作类型。
+    virtual MotionType supported_motion_type() const = 0;
 
-    virtual std::string planner_id() = 0; //返回 ptp lin circ
+    virtual std::string planner_id() const = 0; //返回 ptp lin circ
 
     virtual ValidationResult configure_target(
         const MotionRequest & request  //设置MotionTarget给Moveit
     ) = 0;
+
+    MoveGroupInterface & move_group() { return *move_group_; }
 
 private:
     std::shared_ptr<MoveGroupInterface> move_group_;
