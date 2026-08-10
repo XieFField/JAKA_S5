@@ -25,7 +25,7 @@ public:
 protected:
 
 private:
-    std::map<MotionType, std::shared_ptr<IMotionPlanner>> planners_;
+    std::map<MotionType, std::unique_ptr<IMotionPlanner>> planners_;
 };
 
 } // namespace massage_motion

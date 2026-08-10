@@ -24,6 +24,10 @@ add_executable(circ_planning_demo
   src/circ_planning_demo.cpp
 )
 
+add_executable(motion_planning_sdk_demo
+  src/motion_planning_sdk_demo.cpp
+)
+
 target_compile_features(
   ptp_planning_demo 
   PUBLIC cxx_std_17
@@ -38,6 +42,10 @@ ament_target_dependencies(lin_planning_demo
 )
 
 ament_target_dependencies(circ_planning_demo
+  rclcpp
+)
+
+ament_target_dependencies(motion_planning_sdk_demo
   rclcpp
 )
 
@@ -61,6 +69,10 @@ target_link_libraries(lin_planning_demo
 )
 
 target_link_libraries(circ_planning_demo
+  ${PROJECT_NAME}
+)
+
+target_link_libraries(motion_planning_sdk_demo
   ${PROJECT_NAME}
 )
 
@@ -103,6 +115,19 @@ ament_export_dependencies(
   moveit_ros_planning_interface
 )
 
+# TESTING
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(motion_validation_test
+    test/motion_validation_test.cpp
+  )
+
+  target_link_libraries(motion_validation_test
+    ${PROJECT_NAME}
+  )
+endif()
+
 
 #demo install
 install(
@@ -110,6 +135,7 @@ install(
     ptp_planning_demo
     lin_planning_demo
     circ_planning_demo
+    motion_planning_sdk_demo
   DESTINATION lib/${PROJECT_NAME}
 )
 
