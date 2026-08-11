@@ -36,16 +36,24 @@ struct ExecutionRequest
 {
     std::string request_id;
     moveit_msgs::msg::RobotTrajectory robot_trajectory;
-    double timeout;
+    double timeout{0.0};
 };
 
 struct ExecutionResult
 {
     bool success{false};
     ExecutionError error{ExecutionError::kNone};
-    std::int32_t error_code{0};
+    std::int32_t backend_error_code{0};
     std::string message;
     ExecutionStatus status{ExecutionStatus::kIdle};
 };
+
+struct ExecutionValidationResult
+{
+    bool valid{false};
+    ExecutionError error{ExecutionError::kNone};
+    std::string message;
+};
+
 }// namespace massage_motion
 #endif // EXECUTION_TYPE_HPP_

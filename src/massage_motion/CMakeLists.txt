@@ -10,6 +10,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
+find_package(rclcpp_action REQUIRED)
+
 
 # demo
 add_executable(ptp_planning_demo
@@ -26,6 +28,10 @@ add_executable(circ_planning_demo
 
 add_executable(motion_planning_sdk_demo
   src/motion_planning_sdk_demo.cpp
+)
+
+add_executable(planning_execution_demo
+  src/planning_execution_demo.cpp
 )
 
 target_compile_features(
@@ -49,6 +55,10 @@ ament_target_dependencies(motion_planning_sdk_demo
   rclcpp
 )
 
+ament_target_dependencies(planning_execution_demo
+  rclcpp
+)
+
 # add library
 add_library(${PROJECT_NAME}
   src/motion_types.cpp
@@ -58,6 +68,9 @@ add_library(${PROJECT_NAME}
   src/lin_planner.cpp
   src/circ_planner.cpp
   src/motion_planning_sdk.cpp
+  src/execution_types.cpp
+  src/execution_validation.cpp
+  src/moveit_trajectory_executor.cpp
 )
 
 target_link_libraries(ptp_planning_demo
@@ -76,6 +89,11 @@ target_link_libraries(motion_planning_sdk_demo
   ${PROJECT_NAME}
 )
 
+target_link_libraries(planning_execution_demo
+  ${PROJECT_NAME}
+)
+
+
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 
 # 构建阶段使用源码目录头文件，安装后使用 install 目录中的公共头文件。
@@ -89,6 +107,7 @@ ament_target_dependencies(${PROJECT_NAME}
   moveit_msgs
   rclcpp
   moveit_ros_planning_interface
+  rclcpp_action
 )
 
 # 安装并导出公共头文件和库目标，使其他 ament 包可以通过
@@ -126,6 +145,14 @@ if(BUILD_TESTING)
   target_link_libraries(motion_validation_test
     ${PROJECT_NAME}
   )
+
+  ament_add_gtest(execution_validation_test
+    test/execution_validation_test.cpp
+  )
+
+  target_link_libraries(execution_validation_test
+    ${PROJECT_NAME}
+)
 endif()
 
 
@@ -136,6 +163,7 @@ install(
     lin_planning_demo
     circ_planning_demo
     motion_planning_sdk_demo
+    planning_execution_demo
   DESTINATION lib/${PROJECT_NAME}
 )
 
