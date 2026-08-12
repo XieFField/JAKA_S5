@@ -10,8 +10,10 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
   <exec_depend>massage_motion</exec_depend>
+  <exec_depend>massage_task</exec_depend>
   <exec_depend>jaka_s5_moveit_config</exec_depend>
 
   <export>

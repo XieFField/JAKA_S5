@@ -74,6 +74,7 @@ add_library(${PROJECT_NAME}
   src/execution_validation.cpp
   src/moveit_trajectory_executor.cpp
   src/trajectory_endpoint_error.cpp
+  src/single_axis_admittance.cpp
 )
 
 target_link_libraries(ptp_planning_demo
@@ -166,6 +167,14 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(trajectory_endpoint_error_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(single_axis_admittance_test
+    test/single_axis_admittance_test.cpp
+  )
+
+  target_link_libraries(single_axis_admittance_test
     ${PROJECT_NAME}
   )
 endif()

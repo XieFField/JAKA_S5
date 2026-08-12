@@ -158,10 +158,10 @@ try
 
     const PoseTarget normal_pose_target = pose_target;
 
-    if (test_mode == "cancel")
+    if (test_mode == "cancel" || test_mode == "timeout")
     {
-        // cancel 需要一条有足够执行时间的轨迹。该位姿已在 LIN demo 中验证可达，
-        // 避免机器人已位于 normal 目标点时轨迹瞬间完成。
+        // 故障实验需要一条有足够执行时间的轨迹。该位姿已在 LIN demo 中验证可达，
+        // 避免机器人已位于普通目标点时轨迹瞬间完成，使取消和超时可重复触发。
         pose_target.pose.pose.position.x = 0.748761369855;
         pose_target.pose.pose.position.z = 0.21;
     }
@@ -223,22 +223,24 @@ try
         }
     }
 
-    if (test_mode == "cancel")
+    if (test_mode == "cancel" || test_mode == "timeout")
     {
-        // 每次取消实验先回到同一个起点，避免机械臂已经位于取消目标时，
-        // 轨迹在取消线程发出请求前就瞬间执行完成。
+        // 每次故障实验先回到同一个起点，保证待执行轨迹具有稳定的运动距离。
         MotionRequest preparation_motion_request = ptp_request;
-        preparation_motion_request.request_id = "cancel_preparation_ptp";
+        preparation_motion_request.request_id =
+            test_mode + "_preparation_ptp";
         preparation_motion_request.target = normal_pose_target;
 
         TaskRequest preparation_task_request;
-        preparation_task_request.task_id = "cancel_preparation_task";
+        preparation_task_request.task_id =
+            test_mode + "_preparation_task";
         preparation_task_request.motion_request = preparation_motion_request;
         preparation_task_request.execution_timeout = 10.0;
 
         RCLCPP_INFO(
             node->get_logger(),
-            "cancel 模式准备阶段：先回到固定实验起点");
+            "%s 模式准备阶段：先回到固定实验起点",
+            test_mode.c_str());
 
         const TaskResult preparation_result =
             machine.run(preparation_task_request);
@@ -248,7 +250,7 @@ try
             !machine.reset())
         {
             throw std::runtime_error(
-                "cancel 模式准备阶段失败，无法开始取消实验");
+                test_mode + " 模式准备阶段失败，无法开始故障实验");
         }
     }
 
