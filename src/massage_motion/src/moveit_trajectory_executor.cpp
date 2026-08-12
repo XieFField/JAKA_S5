@@ -16,6 +16,11 @@ MoveItTrajectoryExecutor::MoveItTrajectoryExecutor(
         rclcpp_action::create_client<ExecuteTrajectory>(
             node,
             action_name);
+
+    execution_event_publisher_ =
+        node->create_publisher<std_msgs::msg::String>(
+            "/trajectory_execution_event",
+            rclcpp::QoS(1));
 }
 
 ExecutionStatus MoveItTrajectoryExecutor::status() const
@@ -296,6 +301,11 @@ bool MoveItTrajectoryExecutor::cancel()
 
     try
     {
+        // MoveIt 的轨迹执行管理器订阅该事件并立即停止当前控制器。
+        // 同时提交标准 Action cancel，使 Goal 的终态也能转换为 CANCELED。
+        std_msgs::msg::String stop_event;
+        stop_event.data = "stop";
+        execution_event_publisher_->publish(stop_event);
         action_client_->async_cancel_goal(goal_handle);
     }
     catch (const std::exception & exception)

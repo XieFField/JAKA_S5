@@ -8,26 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(massage_motion REQUIRED)
 find_package(rclcpp REQUIRED)
-
-
-find_package(rclcpp REQUIRED)
-
-add_executable(minimal_task_state_machine_demo
-  src/minimal_task_state_machine_demo.cpp
-)
-
-target_link_libraries(minimal_task_state_machine_demo
-  ${PROJECT_NAME}
-)
-
-ament_target_dependencies(minimal_task_state_machine_demo
-  rclcpp
-)
-
-install(
-  TARGETS minimal_task_state_machine_demo
-  DESTINATION lib/${PROJECT_NAME}
-)
+find_package(sensor_msgs REQUIRED)
 
 add_library(${PROJECT_NAME}
   src/minimal_task_state_machine.cpp
@@ -44,6 +25,19 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 ament_target_dependencies(${PROJECT_NAME}
   massage_motion
+)
+
+# demo
+add_executable(minimal_task_demo src/minimal_task_demo.cpp)
+
+ament_target_dependencies(minimal_task_demo
+  rclcpp
+  massage_motion
+  sensor_msgs
+)
+
+target_link_libraries(minimal_task_demo
+  ${PROJECT_NAME}
 )
 
 install(
@@ -80,7 +74,11 @@ if(BUILD_TESTING)
   )
 endif()
 
-ament_export_dependencies(massage_motion)
-
+#demo install
+install(
+  TARGETS
+  minimal_task_demo
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()

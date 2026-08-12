@@ -10,6 +10,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "moveit_msgs/action/execute_trajectory.hpp"
+#include "std_msgs/msg/string.hpp"
 
 #include "massage_motion/execution_validation.hpp"
 #include "massage_motion/trajectory_executor.hpp"
@@ -37,6 +38,8 @@ public:
 
 private:
     rclcpp_action::Client<ExecuteTrajectory>::SharedPtr action_client_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr
+        execution_event_publisher_;
     rclcpp::Logger logger_;
 
     // 保证同一个执行器只能执行一条轨迹

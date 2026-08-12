@@ -11,6 +11,8 @@ find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 
 
 # demo
@@ -71,6 +73,7 @@ add_library(${PROJECT_NAME}
   src/execution_types.cpp
   src/execution_validation.cpp
   src/moveit_trajectory_executor.cpp
+  src/trajectory_endpoint_error.cpp
 )
 
 target_link_libraries(ptp_planning_demo
@@ -108,6 +111,8 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   moveit_ros_planning_interface
   rclcpp_action
+  sensor_msgs
+  std_msgs
 )
 
 # 安装并导出公共头文件和库目标，使其他 ament 包可以通过
@@ -132,6 +137,8 @@ ament_export_dependencies(
   moveit_msgs
   rclcpp
   moveit_ros_planning_interface
+  sensor_msgs
+  std_msgs
 )
 
 # TESTING
@@ -152,7 +159,15 @@ if(BUILD_TESTING)
 
   target_link_libraries(execution_validation_test
     ${PROJECT_NAME}
-)
+  )
+
+  ament_add_gtest(trajectory_endpoint_error_test
+    test/trajectory_endpoint_error_test.cpp
+  )
+
+  target_link_libraries(trajectory_endpoint_error_test
+    ${PROJECT_NAME}
+  )
 endif()
 
 

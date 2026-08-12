@@ -15,6 +15,9 @@ MinimalTaskStateMachine::MinimalTaskStateMachine(
 
 TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
 {
+    const PlanResult empty_plan_result;
+    const ExecutionResult empty_execution_result;
+
     std::unique_lock<std::mutex> run_lock(
         run_mutex_,
         std::try_to_lock
@@ -24,11 +27,11 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
     {
         return {
             false,
-            TaskState::kFault,
+            state_.load(),
             TaskError::kBusy,
             "当前状态机正在运行其他任务",
-            PlanResult{},
-            ExecutionResult{}
+            empty_plan_result,
+            empty_execution_result
         };
     }
 
@@ -36,11 +39,11 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
     {
         return {
             false,
-            TaskState::kFault,
+            state_.load(),
             TaskError::kBusy,
             "当前状态机不处于空闲状态",
-            PlanResult{},
-            ExecutionResult{}
+            empty_plan_result,
+            empty_execution_result
         };
     }
 
@@ -59,13 +62,13 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
             TaskError::kPlanningFailed,
             plan_result.message,
             plan_result,
-            ExecutionResult{}
+            empty_execution_result
         };
     }
 
     ExecutionRequest execution_request;
+    execution_request.request_id = request.task_id;
     execution_request.robot_trajectory = plan_result.trajectory;
-    
     execution_request.timeout = request.execution_timeout;
 
     state_.store(TaskState::kExecuting);
