@@ -151,11 +151,9 @@ ros2 launch massage_bringup compliant_press_task_demo.launch.py \
   force_limit:=0.2 expect_limit_exceeded:=true
 ```
 
-`0.1 N` 接触阈值、`1.0 N` 上限和仿真导纳参数都不是人体或真机参数。
-
 ## 真机启动
 
-### 1. 安全的只读启动
+### 1. 只读启动
 
 真机入口要求显式传入控制柜 IP，但不会自动登录、上电、使能或运动：
 
@@ -182,7 +180,7 @@ launch 参数，但仍要求提供一个显式 `robot_ip`，避免把现场地�
 
 ### 2. 显式生命周期
 
-只有现场人员确认急停、工作空间和机器人状态后，才按顺序调用：
+按顺序调用：
 
 ```bash
 ros2 service call /jaka_driver/login std_srvs/srv/Trigger "{}"
@@ -207,10 +205,6 @@ ros2 service call /jaka_driver/power_off std_srvs/srv/Trigger "{}"
 ros2 service call /jaka_driver/logout std_srvs/srv/Trigger "{}"
 ```
 
-首次真机验收必须依次完成：只读 -> 上电使能 -> 非人体单关节小角度 -> 低速 PTP ->
-刚性工装 FT -> 柔性测试块按压。详细检查项见
-[`docs/jaka_real_hardware_integration.md`](docs/jaka_real_hardware_integration.md)。
-
 ## 部署到工作服务器
 
 在服务器创建同样的并列目录，并使用固定提交而不是复制开发机的 `install/`：
@@ -230,7 +224,7 @@ cd massage_robot_ws
 git checkout <MASSAGE_PROJECT_COMMIT_OR_TAG>
 ```
 
-然后在服务器重新执行 rosdep、构建和测试。现场 IP、FT 参数及安全上限放在服务器私有
+然后在服务器重新执行 rosdep、构建和测试。设备 IP、FT 参数及控制参数放在服务器私有
 配置或启动参数中，不提交到 Git。部署前记录：两个仓库提交号、ROS 版本、SDK 库校验
 值、控制柜/机器人固件版本和验收结果。
 
