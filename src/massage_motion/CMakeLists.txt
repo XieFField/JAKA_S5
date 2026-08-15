@@ -30,6 +30,7 @@ add_library(${PROJECT_NAME}
   src/execution_validation.cpp
   src/moveit_trajectory_executor.cpp
   src/trajectory_endpoint_error.cpp
+  src/relative_joint_target.cpp
   src/single_axis_admittance.cpp
   src/wrench_processor.cpp
   src/compliance_validation.cpp
@@ -153,6 +154,14 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(compliance_validation_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(relative_joint_target_test
+    test/relative_joint_target_test.cpp
+  )
+
+  target_link_libraries(relative_joint_target_test
     ${PROJECT_NAME}
   )
 endif()

@@ -103,6 +103,10 @@ massage_robot_ws/
     │   ├── demo/
     │   └── test/
     ├── massage_jaka/        # JAKA 生命周期、柔顺和错误适配
+    │   ├── include/         # 真机适配公共接口
+    │   ├── src/             # 适配层实现与只读诊断
+    │   ├── demo/            # 真机运动/柔顺冒烟入口
+    │   └── test/            # 错误映射与保护逻辑测试
     └── massage_bringup/     # 仿真/真机启动与控制器配置
 ```
 
@@ -194,6 +198,51 @@ ros2 service call /jaka_driver/enable_robot std_srvs/srv/Trigger "{}"
 ros2 launch massage_bringup real.launch.py \
   robot_ip:=192.168.x.x connect:=true start_move_group:=true use_rviz:=true
 ```
+
+### 3. 真机运动冒烟
+
+`real_motion_smoke_demo` 不使用硬编码绝对点位，而是从当前 `/joint_states` 构造一个单关节
+相对目标。默认 `execute=false`，只验证当前状态、真实关节限位和 Pilz PTP 规划：
+
+```bash
+ros2 launch massage_bringup real_motion_smoke_demo.launch.py
+```
+
+显式执行时仍使用同一条 MoveIt `ExecuteTrajectory` 到 JAKA
+`FollowJointTrajectory` 链路，并在结束后检查轨迹终点误差：
+
+```bash
+ros2 launch massage_bringup real_motion_smoke_demo.launch.py \
+  execute:=true joint_name:=joint_1 joint_delta:=0.01 \
+  velocity_scale:=0.02 acceleration_scale:=0.02
+```
+
+节点会拒绝零增量、超过 `maximum_joint_delta` 的增量、无效关节状态、非有限参数以及
+终点误差超限。该入口要求 `real.launch.py` 已以 `start_move_group:=true` 启动。
+
+### 4. 真机柔顺冒烟
+
+默认入口只检查 `/joint_states`、`/jaka_driver/wrench` 和
+`world -> massage_tool_tip`，不会启用导纳：
+
+```bash
+ros2 launch massage_bringup real_compliance_smoke_demo.launch.py
+```
+
+`axis` 的 `0..5` 固定表示 FT 坐标系中的 `X/Y/Z/RX/RY/RZ`。只有显式设置
+`activate:=true parameters_confirmed:=true` 才会配置软限幅、导纳参数并进行定时启停；
+`target_wrench`、`constant`、`rebound`、六维上限和位移上限必须先按实际 FT/SDK 定义确定，
+仓库不提供可直接用于真机的默认工艺参数。运行期间适配器持续检查：
+
+- FT 与关节反馈是否过期；
+- 任一已配置的六维力/力矩上限；
+- 最大关节位移与 TCP 直线位移；
+- 总运行时间；
+- 导纳关闭服务是否得到确认。
+
+当前真机柔顺入口是独立导纳冒烟，不发送名义轨迹。完整按压状态机仍需确认 JAKA SDK
+对“目标力、内部参考和外部名义轨迹”的组合语义；在该语义确认前，项目不会同时开启
+轨迹命令通道和导纳命令通道。
 
 结束时按以下顺序关闭：
 

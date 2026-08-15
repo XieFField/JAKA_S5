@@ -13,7 +13,10 @@
 #include "jaka_msgs/srv/set_admittance_config.hpp"
 #include "jaka_msgs/srv/set_torque_sensor_soft_limit.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 #include "std_srvs/srv/set_bool.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 
 #include "massage_motion/compliance_controller.hpp"
 
@@ -26,8 +29,16 @@ struct JakaComplianceConfig
     std::string soft_limit_service{"/jaka_driver/set_ft_soft_limit"};
     std::string config_service{"/jaka_driver/set_admittance_config"};
     std::string enable_service{"/jaka_driver/enable_admittance"};
+    std::string joint_state_topic{"/joint_states"};
+    std::string wrench_frame{"Link_06"};
+    std::string base_frame{"world"};
+    std::string tool_frame{"massage_tool_tip"};
+    std::array<std::string, 6> joint_names{
+        "joint_1", "joint_2", "joint_3",
+        "joint_4", "joint_5", "joint_6"};
     double service_timeout{3.0};
     double feedback_timeout{0.5};
+    double state_timeout{0.5};
     double monitor_period{0.01};
     std::array<double, 6> disabled_axis_soft_limits{
         5.0, 5.0, 5.0, 1.0, 1.0, 1.0};
@@ -57,13 +68,23 @@ public:
 private:
     bool set_soft_limits(const massage_motion::ComplianceRequest & request);
     bool configure_axes(const massage_motion::ComplianceRequest & request);
-    bool set_enabled(bool enabled, std::string & message);
+    bool set_enabled(
+        bool enabled,
+        std::string & message,
+        bool * response_received = nullptr);
+    bool capture_initial_state(std::string & message);
+    bool current_tool_translation(
+        std::array<double, 3> & translation,
+        std::string & message);
     void monitor_loop();
     void set_result(const massage_motion::ComplianceResult & result);
 
     rclcpp::Node::SharedPtr node_;
     JakaComplianceConfig config_;
+    tf2_ros::Buffer tf_buffer_;
+    tf2_ros::TransformListener tf_listener_;
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
     rclcpp::Client<jaka_msgs::srv::SetTorqueSensorSoftLimit>::SharedPtr
         soft_limit_client_;
     rclcpp::Client<jaka_msgs::srv::SetAdmittanceConfig>::SharedPtr config_client_;
@@ -72,7 +93,12 @@ private:
     mutable std::mutex data_mutex_;
     geometry_msgs::msg::WrenchStamped latest_wrench_;
     std::chrono::steady_clock::time_point latest_wrench_time_{};
+    std::vector<double> latest_joint_positions_;
+    std::chrono::steady_clock::time_point latest_joint_state_time_{};
     bool has_wrench_{false};
+    bool has_joint_state_{false};
+    std::vector<double> initial_joint_positions_;
+    std::array<double, 3> initial_tool_translation_{};
     massage_motion::ComplianceRequest request_;
     massage_motion::ComplianceReference latest_reference_;
     massage_motion::ComplianceResult last_result_;

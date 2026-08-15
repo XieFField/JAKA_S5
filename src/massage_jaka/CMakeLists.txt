@@ -19,6 +19,7 @@ find_package(tf2_ros REQUIRED)
 
 add_library(${PROJECT_NAME}
   src/jaka_compliance_controller.cpp
+  src/jaka_compliance_guard.cpp
   src/jaka_error.cpp
   src/jaka_lifecycle_client.cpp
 )
@@ -32,7 +33,9 @@ ament_target_dependencies(${PROJECT_NAME}
   jaka_msgs
   massage_motion
   rclcpp
+  sensor_msgs
   std_srvs
+  tf2_ros
 )
 
 add_executable(hardware_readiness_node src/hardware_readiness_node.cpp)
@@ -46,6 +49,23 @@ ament_target_dependencies(hardware_readiness_node
   tf2_ros
 )
 
+add_executable(real_motion_smoke_demo demo/real_motion_smoke_demo.cpp)
+target_compile_features(real_motion_smoke_demo PUBLIC cxx_std_17)
+target_link_libraries(real_motion_smoke_demo ${PROJECT_NAME})
+ament_target_dependencies(real_motion_smoke_demo
+  massage_motion
+  rclcpp
+  sensor_msgs
+)
+
+add_executable(real_compliance_smoke_demo demo/real_compliance_smoke_demo.cpp)
+target_compile_features(real_compliance_smoke_demo PUBLIC cxx_std_17)
+target_link_libraries(real_compliance_smoke_demo ${PROJECT_NAME})
+ament_target_dependencies(real_compliance_smoke_demo
+  rclcpp
+  tf2_ros
+)
+
 install(DIRECTORY include/ DESTINATION include)
 install(
   TARGETS ${PROJECT_NAME}
@@ -54,7 +74,13 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(TARGETS hardware_readiness_node DESTINATION lib/${PROJECT_NAME})
+install(
+  TARGETS
+    hardware_readiness_node
+    real_compliance_smoke_demo
+    real_motion_smoke_demo
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(
@@ -69,6 +95,26 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(jaka_error_test test/jaka_error_test.cpp)
   target_link_libraries(jaka_error_test ${PROJECT_NAME})
+
+  ament_add_gtest(
+    jaka_compliance_guard_test
+    test/jaka_compliance_guard_test.cpp
+  )
+  target_link_libraries(jaka_compliance_guard_test ${PROJECT_NAME})
+
+  ament_add_gtest(
+    jaka_compliance_controller_test
+    test/jaka_compliance_controller_test.cpp
+  )
+  target_link_libraries(jaka_compliance_controller_test ${PROJECT_NAME})
+  ament_target_dependencies(jaka_compliance_controller_test
+    geometry_msgs
+    jaka_msgs
+    rclcpp
+    sensor_msgs
+    std_srvs
+    tf2_ros
+  )
 endif()
 
 ament_package()
