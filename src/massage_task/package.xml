@@ -3,14 +3,18 @@
   <name>massage_task</name>
   <version>0.1.0</version>
   <description>Task orchestration and state machine interfaces for the massage robot project.</description>
-  <maintainer email="xieffield@todo.todo">xieffield</maintainer>
-  <license>TODO</license>
+  <maintainer email="3432674139@qq.com">xieffield</maintainer>
+  <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>massage_motion</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>moveit_ros_planning_interface</depend>
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
+  <depend>shape_msgs</depend>
 
   
   <test_depend>ament_cmake_gtest</test_depend>

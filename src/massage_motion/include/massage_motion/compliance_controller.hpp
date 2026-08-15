@@ -18,6 +18,11 @@ public:
 
     virtual ComplianceResult stop() = 0;
 
+    virtual bool update_reference(
+        const ComplianceReference & reference) = 0;
+
+    virtual ComplianceFeedback feedback() const = 0;
+
     virtual bool reset() = 0;
 
     virtual ComplianceStatus status() const = 0;

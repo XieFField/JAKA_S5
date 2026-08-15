@@ -1,23 +1,23 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>massage_motion</name>
+  <name>massage_jaka</name>
   <version>0.1.0</version>
-  <description>Basic motion planning types and interfaces for the massage robot project.</description>
+  <description>JAKA hardware adapters for the massage robot project.</description>
   <maintainer email="3432674139@qq.com">xieffield</maintainer>
   <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>geometry_msgs</depend>
   <depend>control_msgs</depend>
-  <depend>controller_manager_msgs</depend>
-  <depend>moveit_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>jaka_msgs</depend>
+  <depend>massage_motion</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
-  <depend>moveit_ros_planning_interface</depend>
   <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>trajectory_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 

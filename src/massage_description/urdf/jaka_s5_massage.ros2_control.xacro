@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!--
+    项目级组合 hardware 描述。
+
+    关节接口与官方 jaka_s5.ros2_control.xacro 保持一致，只在同一个
+    hardware_info 中追加按摩头 FT 状态接口。这样既不修改供应商包，
+    又避免 ign_ros2_control 为传感器创建第二套无关节 system。
+  -->
+  <xacro:macro
+      name="jaka_s5_massage_ros2_control"
+      params="name initial_positions_file use_gazebo use_rviz_sim use_massage_head">
+    <xacro:property
+        name="initial_positions"
+        value="${xacro.load_yaml(initial_positions_file)['initial_positions']}"/>
+
+    <ros2_control name="${name}" type="system">
+      <hardware>
+        <xacro:if value="${use_gazebo}">
+          <plugin>ign_ros2_control/IgnitionSystem</plugin>
+        </xacro:if>
+        <xacro:if value="${use_rviz_sim}">
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:if>
+      </hardware>
+
+      <joint name="joint_1">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['joint_1']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint_2">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['joint_2']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint_3">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['joint_3']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint_4">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['joint_4']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint_5">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['joint_5']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint_6">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['joint_6']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <xacro:if value="${use_massage_head}">
+        <sensor name="massage_ft_sensor">
+          <state_interface name="force.x"/>
+          <state_interface name="force.y"/>
+          <state_interface name="force.z"/>
+          <state_interface name="torque.x"/>
+          <state_interface name="torque.y"/>
+          <state_interface name="torque.z"/>
+        </sensor>
+      </xacro:if>
+    </ros2_control>
+  </xacro:macro>
+</robot>

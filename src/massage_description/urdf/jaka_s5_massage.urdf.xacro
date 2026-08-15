@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="jaka_s5">
+  <!--
+    官方包继续负责机械臂本体和六轴 ros2_control 接口；本包只追加项目工具，
+    从而避免直接修改 jaka_ros2 中的供应商文件。
+  -->
+  <xacro:arg
+      name="initial_positions_file"
+      default="$(find jaka_s5_moveit_config)/config/initial_positions.yaml"/>
+  <xacro:arg name="use_gazebo" default="false"/>
+  <xacro:arg name="use_rviz_sim" default="false"/>
+  <xacro:arg name="use_massage_head" default="false"/>
+
+  <xacro:include
+    filename="$(find jaka_description)/urdf/jaka_s5.urdf"/>
+  <xacro:include filename="jaka_s5_massage.ros2_control.xacro"/>
+  <xacro:include filename="massage_head.xacro"/>
+
+  <xacro:jaka_s5_massage_ros2_control
+      name="jaka_s5_hardware"
+      initial_positions_file="$(arg initial_positions_file)"
+      use_gazebo="$(arg use_gazebo)"
+      use_rviz_sim="$(arg use_rviz_sim)"
+      use_massage_head="$(arg use_massage_head)"/>
+
+  <xacro:if value="$(arg use_massage_head)">
+    <xacro:massage_head
+      parent_link="Link_06"
+      wrench_topic="/massage/ft_sensor/wrench"/>
+  </xacro:if>
+</robot>

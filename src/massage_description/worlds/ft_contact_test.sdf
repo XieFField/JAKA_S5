@@ -1,0 +1,130 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="ft_contact_test">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin
+      filename="ignition-gazebo-physics-system"
+      name="gz::sim::systems::Physics"/>
+    <plugin
+      filename="ignition-gazebo-user-commands-system"
+      name="gz::sim::systems::UserCommands"/>
+    <plugin
+      filename="ignition-gazebo-scene-broadcaster-system"
+      name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin
+      filename="ignition-gazebo-contact-system"
+      name="gz::sim::systems::Contact"/>
+    <plugin
+      filename="ignition-gazebo-forcetorque-system"
+      name="ignition::gazebo::systems::ForceTorque"/>
+    <!-- 实验二使用该系统向按摩头施加可重复的已知外力。 -->
+    <plugin
+      filename="ignition-gazebo-apply-link-wrench-system"
+      name="gz::sim::systems::ApplyLinkWrench"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="ground_link">
+        <collision name="ground_collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="ground_visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.65 0.68 0.70 1</ambient>
+            <diffuse>0.65 0.68 0.70 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!--
+      接触块位于抬高后的工作位附近，机械臂零位时两者在 Z 方向分离。
+      pad_link 只允许沿世界 Y 方向移动，并由弹簧和阻尼复位。这样机械臂
+      主动低速接触时能获得可控柔度，不再依赖刚体穿透制造冲击力。
+    -->
+    <model name="contact_pad">
+      <static>false</static>
+      <allow_auto_disable>false</allow_auto_disable>
+      <pose>0.75 -0.15 0.106382 0 0 0</pose>
+      <link name="pad_link">
+        <gravity>false</gravity>
+        <inertial>
+          <mass>2.0</mass>
+          <inertia>
+            <ixx>0.003333</ixx>
+            <iyy>0.008333</iyy>
+            <izz>0.008333</izz>
+          </inertia>
+        </inertial>
+        <collision name="pad_collision">
+          <geometry>
+            <box>
+              <size>0.20 0.10 0.10</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.5</mu>
+                <mu2>0.5</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="pad_visual">
+          <geometry>
+            <box>
+              <size>0.20 0.10 0.10</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.25 0.45 0.65 1</ambient>
+            <diffuse>0.25 0.45 0.65 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <joint name="pad_compliance_joint" type="prismatic">
+        <parent>world</parent>
+        <child>pad_link</child>
+        <axis>
+          <xyz>0 1 0</xyz>
+          <limit>
+            <lower>-0.03</lower>
+            <upper>0.005</upper>
+            <effort>1000.0</effort>
+            <velocity>0.10</velocity>
+          </limit>
+          <dynamics>
+            <damping>20.0</damping>
+            <spring_reference>0.0</spring_reference>
+            <spring_stiffness>500.0</spring_stiffness>
+          </dynamics>
+        </axis>
+      </joint>
+    </model>
+
+  </world>
+</sdf>

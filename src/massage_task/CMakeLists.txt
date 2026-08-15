@@ -6,12 +6,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(massage_motion REQUIRED)
+find_package(moveit_msgs REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(shape_msgs REQUIRED)
 
 add_library(${PROJECT_NAME}
   src/minimal_task_state_machine.cpp
+  src/press_task_state_machine.cpp
 )
 
 target_compile_features(${PROJECT_NAME}
@@ -24,20 +29,25 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 ament_target_dependencies(${PROJECT_NAME}
+  geometry_msgs
   massage_motion
 )
 
-# demo
-add_executable(minimal_task_demo src/minimal_task_demo.cpp)
+# demo 源码只负责装配和验收，状态机实现保留在 src/ 库目标中。
+function(add_massage_task_demo target)
+  add_executable(${target} demo/${target}.cpp)
+  target_compile_features(${target} PUBLIC cxx_std_17)
+  target_link_libraries(${target} ${PROJECT_NAME})
+  ament_target_dependencies(${target} rclcpp massage_motion ${ARGN})
+endfunction()
 
-ament_target_dependencies(minimal_task_demo
-  rclcpp
-  massage_motion
-  sensor_msgs
-)
-
-target_link_libraries(minimal_task_demo
-  ${PROJECT_NAME}
+add_massage_task_demo(minimal_task_demo sensor_msgs)
+add_massage_task_demo(compliance_contact_demo)
+add_massage_task_demo(
+  compliant_press_task_demo
+  moveit_msgs
+  moveit_ros_planning_interface
+  shape_msgs
 )
 
 install(
@@ -59,6 +69,7 @@ ament_export_targets(
 )
 
 ament_export_dependencies(
+  geometry_msgs
   massage_motion
 )
 
@@ -72,12 +83,22 @@ if(BUILD_TESTING)
   target_link_libraries(minimal_task_state_machine_test
     ${PROJECT_NAME}
   )
+
+  ament_add_gtest(press_task_state_machine_test
+    test/press_task_state_machine_test.cpp
+  )
+
+  target_link_libraries(press_task_state_machine_test
+    ${PROJECT_NAME}
+  )
 endif()
 
 #demo install
 install(
   TARGETS
   minimal_task_demo
+  compliance_contact_demo
+  compliant_press_task_demo
   DESTINATION lib/${PROJECT_NAME}
 )
 

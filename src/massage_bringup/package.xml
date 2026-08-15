@@ -3,18 +3,30 @@
   <name>massage_bringup</name>
   <version>0.1.0</version>
   <description>Launch and configuration package for the massage robot system.</description>
-  <maintainer email="xieffield@todo.todo">xieffield</maintainer>
-  <license>TODO</license>
+  <maintainer email="3432674139@qq.com">xieffield</maintainer>
+  <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>admittance_controller</exec_depend>
+  <exec_depend>force_torque_sensor_broadcaster</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>kinematics_interface_kdl</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>massage_description</exec_depend>
   <exec_depend>massage_motion</exec_depend>
   <exec_depend>massage_task</exec_depend>
   <exec_depend>jaka_s5_moveit_config</exec_depend>
+  <exec_depend>jaka_driver</exec_depend>
+  <exec_depend>massage_jaka</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>xacro</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

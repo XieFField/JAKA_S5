@@ -1,0 +1,68 @@
+massage_ft_broadcaster:
+  ros__parameters:
+    sensor_name: massage_ft_sensor
+    frame_id: jaka_s5/ft_sensor_joint/massage_ft_sensor
+
+# 实验五先只验证控制器能否正确加载和配置。
+# 该控制器由 launch 文件以 inactive 状态启动，不会占用六轴 position 命令接口。
+massage_admittance_controller:
+  ros__parameters:
+    joints:
+      - joint_1
+      - joint_2
+      - joint_3
+      - joint_4
+      - joint_5
+      - joint_6
+
+    command_interfaces:
+      - position
+
+    state_interfaces:
+      - position
+      - velocity
+
+    chainable_command_interfaces:
+      - position
+      - velocity
+
+    kinematics:
+      plugin_name: kinematics_interface_kdl/KinematicsInterfaceKDL
+      plugin_package: kinematics_interface
+      base: world
+      tip: massage_head_link
+      alpha: 0.0005
+
+    ft_sensor:
+      name: massage_ft_sensor
+      # 必须是 KDL 运动链中真实存在的 link，而不是 Gazebo sensor 名称。
+      frame:
+        id: massage_head_link
+      filter_coefficient: 0.05
+
+    control:
+      frame:
+        id: massage_head_link
+
+    fixed_world_frame:
+      frame:
+        id: world
+
+    gravity_compensation:
+      frame:
+        id: massage_head_link
+      CoG:
+        # 当前阶段不使用尚未标定的工具质心和重量补偿。
+        pos: [0.0, 0.0, 0.0]
+        force: 0.0
+
+    admittance:
+      # 顺序为 x、y、z、rx、ry、rz；本实验只开放按摩头局部 Z 轴。
+      selected_axes: [false, false, true, false, false, false]
+      mass: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+      # 对应实验四 D=13、M=2、K=20 的阻尼比约为 1.03。
+      damping_ratio: [1.03, 1.03, 1.03, 1.03, 1.03, 1.03]
+      stiffness: [20.0, 20.0, 20.0, 20.0, 20.0, 20.0]
+      joint_damping: 5.0
+
+    enable_parameter_update_without_reactivation: true

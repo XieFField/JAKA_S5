@@ -17,24 +17,23 @@ def generate_launch_description():
     test_mode = LaunchConfiguration("test_mode")
     joint_error_tolerance = LaunchConfiguration("joint_error_tolerance")
 
-    jaka_share = get_package_share_directory(
-        "jaka_s5_moveit_config"
-    )
+    bringup_share = get_package_share_directory("massage_bringup")
 
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                jaka_share,
+                bringup_share,
                 "launch",
-                "s5_gazebo_control.launch.py",
+                "ft_sensor_sim.launch.py",
             )
-        )
+        ),
+        launch_arguments={"use_massage_head": "true"}.items(),
     )
 
     move_group_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                jaka_share,
+                bringup_share,
                 "launch",
                 "move_group_sim.launch.py",
             )
@@ -44,9 +43,9 @@ def generate_launch_description():
     rviz_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                jaka_share,
+                bringup_share,
                 "launch",
-                "moveit_rviz.launch.py",
+                "moveit_rviz_sim.launch.py",
             )
         ),
         condition=IfCondition(use_rviz),
@@ -60,7 +59,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(
-                        get_package_share_directory("massage_bringup"),
+                        bringup_share,
                         "launch",
                         "minimal_task_demo.launch.py",
                     )
