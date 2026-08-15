@@ -30,6 +30,10 @@ robot_project/
 └── massage_robot_ws/       # 本仓库，项目业务代码
 ```
 
+本项目在 GitHub 上的仓库名是 `XieFField/JAKA_S5`，克隆到本地时使用
+`massage_robot_ws` 作为 ROS 2 工作区目录名。Git 仓库名与本地目录名无需一致；后续文档中的
+`massage_robot_ws` 均表示本地工作区目录，不要求修改 GitHub 仓库名。
+
 `jaka_ros2` 保留官方所有型号，项目修改放在 `feature/massage-s5-integration` 分支。
 这样能够继续合并官方修复，也能清楚审计我们对驱动和 S5 MoveIt 配置的修改。删除其他
 型号只会制造难维护的私有副本，并不会明显降低部署体积。
