@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <limits>
@@ -10,7 +12,10 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "gtest/gtest.h"
+#include "jaka_msgs/msg/robot_msg.hpp"
+#include "jaka_msgs/srv/get_admittance_state.hpp"
 #include "jaka_msgs/srv/set_admittance_config.hpp"
+#include "jaka_msgs/srv/set_force_control_frame.hpp"
 #include "jaka_msgs/srv/set_torque_sensor_soft_limit.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -47,6 +52,7 @@ massage_motion::ComplianceRequest make_request()
     massage_motion::ComplianceRequest request;
     request.request_id = "fake_jaka_compliance";
     request.enabled_axes[2] = true;
+    request.target_wrench[2] = 0.4;
     request.max_absolute_wrench = {5.0, 5.0, 5.0, 1.0, 1.0, 1.0};
     request.max_joint_displacement = 0.1;
     request.max_linear_displacement = 0.1;
@@ -63,33 +69,67 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
 
     std::atomic<int> soft_limit_calls{0};
     std::atomic<int> config_calls{0};
+    std::mutex config_mutex;
+    std::vector<jaka_msgs::srv::SetAdmittanceConfig::Request> config_requests;
+    std::array<double, 6> configured_soft_limits{};
+    std::array<jaka_msgs::srv::SetAdmittanceConfig::Request, 6>
+        configured_axes;
+    std::int32_t configured_frame = 0;
+    bool force_control_enabled = false;
+    std::string control_owner{"idle"};
     std::mutex enable_mutex;
     std::vector<bool> enable_requests;
     auto soft_limit_service = backend_node->create_service<
         jaka_msgs::srv::SetTorqueSensorSoftLimit>(
         "/test_jaka/set_ft_soft_limit",
-        [&soft_limit_calls](
+        [&soft_limit_calls, &config_mutex, &configured_soft_limits](
             const std::shared_ptr<
-                jaka_msgs::srv::SetTorqueSensorSoftLimit::Request>,
+                jaka_msgs::srv::SetTorqueSensorSoftLimit::Request> request,
             std::shared_ptr<
                 jaka_msgs::srv::SetTorqueSensorSoftLimit::Response> response)
         {
             ++soft_limit_calls;
+            {
+                std::lock_guard<std::mutex> lock(config_mutex);
+                configured_soft_limits = request->limits;
+            }
             response->success = true;
         });
     auto config_service = backend_node->create_service<
         jaka_msgs::srv::SetAdmittanceConfig>(
         "/test_jaka/set_admittance_config",
-        [&config_calls](
-            const std::shared_ptr<jaka_msgs::srv::SetAdmittanceConfig::Request>,
+        [&config_calls, &config_mutex, &config_requests, &configured_axes](
+            const std::shared_ptr<jaka_msgs::srv::SetAdmittanceConfig::Request>
+            request,
             std::shared_ptr<jaka_msgs::srv::SetAdmittanceConfig::Response> response)
         {
             ++config_calls;
+            {
+                std::lock_guard<std::mutex> lock(config_mutex);
+                config_requests.push_back(*request);
+                configured_axes[static_cast<std::size_t>(request->axis)] =
+                    *request;
+            }
             response->success = true;
+        });
+    auto frame_service = backend_node->create_service<
+        jaka_msgs::srv::SetForceControlFrame>(
+        "/test_jaka/set_force_control_frame",
+        [&config_mutex, &configured_frame](
+            const std::shared_ptr<
+                jaka_msgs::srv::SetForceControlFrame::Request> request,
+            std::shared_ptr<
+                jaka_msgs::srv::SetForceControlFrame::Response> response)
+        {
+            std::lock_guard<std::mutex> lock(config_mutex);
+            configured_frame = request->frame;
+            response->success = true;
+            response->message = "fake frame configured";
         });
     auto enable_service = backend_node->create_service<std_srvs::srv::SetBool>(
         "/test_jaka/enable_admittance",
-        [&enable_mutex, &enable_requests](
+        [&enable_mutex, &enable_requests, &config_mutex,
+        &force_control_enabled, &control_owner](
             const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
             std::shared_ptr<std_srvs::srv::SetBool::Response> response)
         {
@@ -97,8 +137,40 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
                 std::lock_guard<std::mutex> lock(enable_mutex);
                 enable_requests.push_back(request->data);
             }
+            {
+                std::lock_guard<std::mutex> lock(config_mutex);
+                force_control_enabled = request->data;
+                control_owner = request->data ? "compliance" : "idle";
+            }
             response->success = true;
             response->message = request->data ? "fake enabled" : "fake disabled";
+        });
+    auto state_service = backend_node->create_service<
+        jaka_msgs::srv::GetAdmittanceState>(
+        "/test_jaka/get_admittance_state",
+        [&config_mutex, &configured_soft_limits, &configured_axes,
+        &configured_frame, &force_control_enabled, &control_owner](
+            const std::shared_ptr<
+                jaka_msgs::srv::GetAdmittanceState::Request>,
+            std::shared_ptr<
+                jaka_msgs::srv::GetAdmittanceState::Response> response)
+        {
+            std::lock_guard<std::mutex> lock(config_mutex);
+            response->success = true;
+            response->soft_limits = configured_soft_limits;
+            response->force_control_enabled = force_control_enabled;
+            response->force_control_frame = configured_frame;
+            response->control_owner = control_owner;
+            for (std::size_t axis = 0; axis < configured_axes.size(); ++axis)
+            {
+                const auto & config = configured_axes[axis];
+                response->axis_options[axis] = config.option;
+                response->maximum_speed_wrench[axis] =
+                    config.maximum_speed_wrench;
+                response->constant_wrench[axis] = config.constant_wrench;
+                response->normal_track[axis] = config.normal_track;
+                response->rebound_wrench[axis] = config.rebound_wrench;
+            }
         });
 
     auto wrench_publisher = backend_node->create_publisher<
@@ -106,6 +178,9 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
         "/test_jaka/wrench", rclcpp::SensorDataQoS());
     auto joint_publisher = backend_node->create_publisher<sensor_msgs::msg::JointState>(
         "/test_jaka/joint_states", rclcpp::SensorDataQoS());
+    auto robot_state_publisher = backend_node->create_publisher<
+        jaka_msgs::msg::RobotMsg>(
+        "/test_jaka/robot_states", rclcpp::SensorDataQoS());
     tf2_ros::StaticTransformBroadcaster static_broadcaster(backend_node);
     geometry_msgs::msg::TransformStamped transform;
     transform.header.stamp = backend_node->now();
@@ -119,7 +194,11 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     config.soft_limit_service = "/test_jaka/set_ft_soft_limit";
     config.config_service = "/test_jaka/set_admittance_config";
     config.enable_service = "/test_jaka/enable_admittance";
+    config.force_control_frame_service =
+        "/test_jaka/set_force_control_frame";
+    config.admittance_state_service = "/test_jaka/get_admittance_state";
     config.joint_state_topic = "/test_jaka/joint_states";
+    config.robot_state_topic = "/test_jaka/robot_states";
     config.wrench_frame = "test_ft";
     config.base_frame = "test_world";
     config.tool_frame = "test_tool";
@@ -127,6 +206,8 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     config.feedback_timeout = 0.2;
     config.state_timeout = 0.2;
     config.monitor_period = 0.005;
+    config.maximum_speed_wrench[2] = 3.0;
+    config.rebound_wrench[2] = 0.2;
     auto controller = std::make_shared<massage_jaka::JakaComplianceController>(
         adapter_node, config);
 
@@ -162,6 +243,11 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     wrench.header.stamp = backend_node->now();
     wrench.header.frame_id = config.wrench_frame;
     wrench.wrench.force.z = 0.2;
+    jaka_msgs::msg::RobotMsg robot_state;
+    robot_state.motion_state = 0;
+    robot_state.power_state = 1;
+    robot_state.servo_state = 1;
+    robot_state.collision_state = 0;
 
     bool feedback_ready = false;
     const auto feedback_deadline = std::chrono::steady_clock::now() + 1s;
@@ -169,6 +255,7 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     {
         joint_publisher->publish(joint_state);
         wrench_publisher->publish(wrench);
+        robot_state_publisher->publish(robot_state);
         if (!controller->feedback().stale)
         {
             feedback_ready = true;
@@ -190,6 +277,7 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     {
         joint_publisher->publish(joint_state);
         wrench_publisher->publish(wrench);
+        robot_state_publisher->publish(robot_state);
         std::this_thread::sleep_for(10ms);
     }
     EXPECT_TRUE(controller->feedback().stale);
@@ -201,6 +289,7 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     {
         joint_publisher->publish(joint_state);
         wrench_publisher->publish(wrench);
+        robot_state_publisher->publish(robot_state);
         if (!controller->feedback().stale)
         {
             feedback_ready = true;
@@ -216,6 +305,26 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     }
     // 为控制器内部 TF listener 留出接收静态变换的时间。
     std::this_thread::sleep_for(50ms);
+
+    robot_state.power_state = 0;
+    for (int attempt = 0; attempt < 5; ++attempt)
+    {
+        robot_state_publisher->publish(robot_state);
+        std::this_thread::sleep_for(10ms);
+    }
+    const auto unpowered_result = controller->start(make_request());
+    EXPECT_FALSE(unpowered_result.success);
+    EXPECT_EQ(
+        unpowered_result.error,
+        massage_motion::ComplianceError::kBackendUnavailable);
+    robot_state.power_state = 1;
+    for (int attempt = 0; attempt < 5; ++attempt)
+    {
+        robot_state_publisher->publish(robot_state);
+        joint_publisher->publish(joint_state);
+        wrench_publisher->publish(wrench);
+        std::this_thread::sleep_for(10ms);
+    }
 
     const auto start_result = controller->start(make_request());
     if (!start_result.success)
@@ -246,6 +355,17 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     EXPECT_EQ(soft_limit_calls.load(), 1);
     EXPECT_EQ(config_calls.load(), 6);
     {
+        std::lock_guard<std::mutex> lock(config_mutex);
+        const auto enabled_axis = std::find_if(
+            config_requests.begin(), config_requests.end(),
+            [](const auto & request) {return request.axis == 2;});
+        ASSERT_NE(enabled_axis, config_requests.end());
+        EXPECT_EQ(enabled_axis->option, 1);
+        EXPECT_DOUBLE_EQ(enabled_axis->maximum_speed_wrench, 3.0);
+        EXPECT_DOUBLE_EQ(enabled_axis->constant_wrench, 0.4);
+        EXPECT_DOUBLE_EQ(enabled_axis->rebound_wrench, 0.2);
+    }
+    {
         std::lock_guard<std::mutex> lock(enable_mutex);
         EXPECT_EQ(enable_requests.size(), 2U);
         if (enable_requests.size() >= 2U)
@@ -257,10 +377,41 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     EXPECT_TRUE(controller->reset());
     EXPECT_EQ(controller->status(), massage_motion::ComplianceStatus::kIdle);
 
+    wrench.wrench.force.z = 0.2;
+    for (int attempt = 0; attempt < 5; ++attempt)
+    {
+        joint_publisher->publish(joint_state);
+        wrench_publisher->publish(wrench);
+        robot_state_publisher->publish(robot_state);
+        std::this_thread::sleep_for(10ms);
+    }
+    const auto second_start = controller->start(make_request());
+    ASSERT_TRUE(second_start.success) << second_start.message;
+    wrench.wrench.force.z = 6.0;
+    const auto fault_deadline = std::chrono::steady_clock::now() + 1s;
+    while (std::chrono::steady_clock::now() < fault_deadline &&
+        controller->status() == massage_motion::ComplianceStatus::kActive)
+    {
+        joint_publisher->publish(joint_state);
+        wrench_publisher->publish(wrench);
+        robot_state_publisher->publish(robot_state);
+        std::this_thread::sleep_for(10ms);
+    }
+    EXPECT_EQ(
+        controller->status(), massage_motion::ComplianceStatus::kStopped);
+    const auto preserved_fault = controller->stop();
+    EXPECT_FALSE(preserved_fault.success);
+    EXPECT_EQ(
+        preserved_fault.error,
+        massage_motion::ComplianceError::kLimitExceeded);
+    EXPECT_TRUE(controller->reset());
+
     shutdown();
     (void)soft_limit_service;
     (void)config_service;
     (void)enable_service;
+    (void)frame_service;
+    (void)state_service;
 }
 
 }  // namespace

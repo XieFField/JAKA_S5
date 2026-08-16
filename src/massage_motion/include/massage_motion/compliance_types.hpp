@@ -79,6 +79,7 @@ struct ComplianceFeedback
     ComplianceStatus status{ComplianceStatus::kIdle};
     std::array<double, kCartesianDof> wrench{};
     std::vector<double> joint_positions;
+    std::int64_t wrench_stamp_nanoseconds{0};
     double age{0.0};
     bool stale{true};
 };

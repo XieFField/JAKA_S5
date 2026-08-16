@@ -32,7 +32,9 @@ add_library(${PROJECT_NAME}
   src/trajectory_endpoint_error.cpp
   src/relative_joint_target.cpp
   src/single_axis_admittance.cpp
+  src/wrench_observation.cpp
   src/wrench_processor.cpp
+  src/wrench_subscriber.cpp
   src/compliance_validation.cpp
   src/ros2_control_compliance_controller.cpp
 )
@@ -146,6 +148,22 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(wrench_processor_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(wrench_observation_test
+    test/wrench_observation_test.cpp
+  )
+
+  target_link_libraries(wrench_observation_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(wrench_subscriber_test
+    test/wrench_subscriber_test.cpp
+  )
+
+  target_link_libraries(wrench_subscriber_test
     ${PROJECT_NAME}
   )
 

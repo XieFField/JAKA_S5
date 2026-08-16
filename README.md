@@ -157,13 +157,25 @@ ros2 launch massage_bringup compliant_press_task_demo.launch.py \
 
 ## 真机启动
 
+首次连接控制柜时，先按照
+[JAKA S5 首次运动前上机验证 Runbook](docs/jaka_pre_motion_runbook.md)
+完成物理连接、固定 IP-MAC 绑定核对、SDK 只读状态和 MoveIt 只规划验证。当前控制柜信息为
+JKCab23、192.168.66.200、00:18:7D:ED:79:7B，推荐网络拓扑为：
+
+~~~text
+电脑/工作服务器 -> 现场路由器（固定地址绑定） -> JAKA 控制柜 -> JAKA S5
+~~~
+
+该固定地址由现场路由器按照控制柜 MAC 地址分配，不等同于已经确认控制柜网卡内部保存了静态
+地址。因此当前保留路由器，不改成电脑与控制柜单线直连；launch 仍要求显式传入控制柜 IP。
+
 ### 1. 只读启动
 
 真机入口要求显式传入控制柜 IP，但不会自动登录、上电、使能或运动：
 
 ```bash
 ros2 launch massage_bringup real.launch.py \
-  robot_ip:=192.168.x.x \
+  robot_ip:=192.168.66.200 \
   connect:=true \
   start_move_group:=false \
   use_rviz:=false
@@ -196,7 +208,7 @@ ros2 service call /jaka_driver/enable_robot std_srvs/srv/Trigger "{}"
 
 ```bash
 ros2 launch massage_bringup real.launch.py \
-  robot_ip:=192.168.x.x connect:=true start_move_group:=true use_rviz:=true
+  robot_ip:=192.168.66.200 connect:=true start_move_group:=true use_rviz:=true
 ```
 
 ### 3. 真机运动冒烟
@@ -213,14 +225,60 @@ ros2 launch massage_bringup real_motion_smoke_demo.launch.py
 
 ```bash
 ros2 launch massage_bringup real_motion_smoke_demo.launch.py \
-  execute:=true joint_name:=joint_1 joint_delta:=0.01 \
+  execute:=true joint_name:=joint_1 joint_delta:=0.02 \
+  endpoint_tolerance:=0.005 \
   velocity_scale:=0.02 acceleration_scale:=0.02
 ```
 
 节点会拒绝零增量、超过 `maximum_joint_delta` 的增量、无效关节状态、非有限参数以及
 终点误差超限。该入口要求 `real.launch.py` 已以 `start_move_group:=true` 启动。
 
-### 4. 真机柔顺冒烟
+真机已经完成 `joint_1` 的 `+0.02/-0.02 rad` 正反向低速执行、终点误差检查、超时取消和
+取消后恢复执行。更大幅度或其他关节仍须继续使用相对目标和独立参数复核。
+
+不改变目标关节位置的 Action 协议验证用于检查 feedback、并发 Goal 拒绝、取消和取消后恢复。
+默认只检查 `/joint_states` 与 Action 是否存在；显式启用后，节点将当前六轴位置作为目标，
+不会生成计划位移：
+
+```bash
+ros2 launch massage_bringup real_action_protocol_demo.launch.py \
+  run_protocol_test:=true \
+  test_external_stop:=true
+```
+
+通过日志应同时包含 `feedback` 计数、`并发 Goal 已拒绝`、`取消与恢复成功`，并且最大实际
+关节位移不超过 `maximum_stationary_delta`。该入口直接连接驱动 Action，不要求启动 MoveIt，
+但驱动必须已经登录、上电并使能。真机已经验证完整 feedback、并发 Goal 拒绝、标准 Action
+取消、legacy motion 互斥、`stop_move` 抢占以及两种停止路径后的新 Goal 恢复；零位移测试测得
+最大实际关节变化和最大反馈误差均为 `0 rad`。
+
+### 4. 真机 FT 被动观测
+
+阶段二先把 FT 数据验证与柔顺启用分开。该入口只订阅
+`/jaka_driver/wrench`，不会创建柔顺控制器，也不会调用运动、上电、使能或导纳服务。驱动连接并
+登录后，保持机械臂静止，按日志依次完成无外载基线、人工加载和卸载恢复三个时间窗：
+
+```bash
+ros2 launch massage_bringup real_ft_observation_demo.launch.py
+```
+
+默认采集 `5 s + 10 s + 5 s`，检查 `Link_06` 坐标系、有限六维数值、阶段内采样率和最大采样
+间隔，并将原始样本写入 `/tmp/massage_ft_observation_<timestamp>.csv`。首次运行默认
+`required_response:=none`，只采集真实数据，不用未经验证的阈值判定传感器是否合格。CSV 确认
+符号、噪声和加载幅值后，可以显式启用响应门禁，例如：
+
+```bash
+ros2 launch massage_bringup real_ft_observation_demo.launch.py \
+  required_response:=either \
+  minimum_force_delta:=0.5 \
+  minimum_torque_delta:=0.05
+```
+
+`required_response` 支持 `none/force/torque/either/both`。力单位按消息定义为 N，力矩为 N*m；
+门限是否适合当前 FT 硬件必须由第一份 CSV 决定。即使采集中断或验收失败，节点也会尝试保存
+失败前已收到的样本。
+
+### 5. 真机柔顺冒烟
 
 默认入口只检查 `/joint_states`、`/jaka_driver/wrench` 和
 `world -> massage_tool_tip`，不会启用导纳：
@@ -231,8 +289,11 @@ ros2 launch massage_bringup real_compliance_smoke_demo.launch.py
 
 `axis` 的 `0..5` 固定表示 FT 坐标系中的 `X/Y/Z/RX/RY/RZ`。只有显式设置
 `activate:=true parameters_confirmed:=true` 才会配置软限幅、导纳参数并进行定时启停；
-`target_wrench`、`constant`、`rebound`、六维上限和位移上限必须先按实际 FT/SDK 定义确定，
-仓库不提供可直接用于真机的默认工艺参数。运行期间适配器持续检查：
+`target_wrench` 表示 SDK 的恒力目标 `ftConstant`；`maximum_speed_wrench` 表示达到最大柔顺
+速度所需的外力/力矩 `ftUser`；`rebound_wrench` 表示回到初始位置的恢复能力
+`ftReboundFK`。`maximum_speed_wrench` 默认是 `0`，启用轴未显式设置正值时程序会拒绝启动。
+这些参数、六维上限和位移上限必须先按实际 FT/SDK 定义确定，仓库不提供可直接用于真机的
+默认工艺参数。运行期间适配器持续检查：
 
 - FT 与关节反馈是否过期；
 - 任一已配置的六维力/力矩上限；
@@ -298,6 +359,7 @@ git checkout <MASSAGE_PROJECT_COMMIT_OR_TAG>
 
 - [项目总体架构与进度](docs/project_outline.md)
 - [推拿手法与视觉反馈方案](docs/massage_technique_vision_plan.md)
+- [JAKA S5 首次运动前上机验证 Runbook](docs/jaka_pre_motion_runbook.md)
 - [JAKA 真机联调检查表](docs/jaka_real_hardware_integration.md)
 - [规划执行实验记录](docs/planning_execution_demo_report.md)
 

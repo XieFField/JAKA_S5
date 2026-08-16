@@ -66,6 +66,25 @@ ament_target_dependencies(real_compliance_smoke_demo
   tf2_ros
 )
 
+add_executable(real_action_protocol_demo demo/real_action_protocol_demo.cpp)
+target_compile_features(real_action_protocol_demo PUBLIC cxx_std_17)
+ament_target_dependencies(real_action_protocol_demo
+  control_msgs
+  jaka_msgs
+  rclcpp
+  rclcpp_action
+  sensor_msgs
+  std_srvs
+)
+
+add_executable(real_ft_observation_demo demo/real_ft_observation_demo.cpp)
+target_compile_features(real_ft_observation_demo PUBLIC cxx_std_17)
+ament_target_dependencies(real_ft_observation_demo
+  geometry_msgs
+  massage_motion
+  rclcpp
+)
+
 install(DIRECTORY include/ DESTINATION include)
 install(
   TARGETS ${PROJECT_NAME}
@@ -77,7 +96,9 @@ install(
 install(
   TARGETS
     hardware_readiness_node
+    real_action_protocol_demo
     real_compliance_smoke_demo
+    real_ft_observation_demo
     real_motion_smoke_demo
   DESTINATION lib/${PROJECT_NAME}
 )

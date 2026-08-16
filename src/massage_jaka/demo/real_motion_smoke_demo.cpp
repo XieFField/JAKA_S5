@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -23,6 +24,7 @@ namespace
 const std::vector<std::string> kJointNames{
     "joint_1", "joint_2", "joint_3",
     "joint_4", "joint_5", "joint_6"};
+constexpr double kRadiansToDegrees = 57.29577951308232;
 
 }  // namespace
 
@@ -132,6 +134,21 @@ int main(int argc, char ** argv)
             }
             else
             {
+                const auto selected_joint_iterator = std::find(
+                    kJointNames.begin(), kJointNames.end(), joint_name);
+                const auto selected_joint_index = static_cast<std::size_t>(
+                    std::distance(kJointNames.begin(), selected_joint_iterator));
+                const double target_position =
+                    target_result.target.positions[selected_joint_index];
+                const double initial_position = target_position - joint_delta;
+
+                RCLCPP_INFO(
+                    node->get_logger(),
+                    "相对关节目标: joint=%s, initial=%.9f rad, "
+                    "target=%.9f rad, commanded_delta=%.9f rad (%.6f deg)",
+                    joint_name.c_str(), initial_position, target_position,
+                    joint_delta, joint_delta * kRadiansToDegrees);
+
                 massage_motion::PlannerConfig planner_config;
                 planner_config.planning_group = "jaka_s5";
                 planner_config.end_effector_link = "massage_tool_tip";
@@ -227,6 +244,31 @@ int main(int argc, char ** argv)
                             }
                             else
                             {
+                                const auto selected_error = std::find_if(
+                                    endpoint.joint_errors.begin(),
+                                    endpoint.joint_errors.end(),
+                                    [&joint_name](const auto & joint_error)
+                                    {
+                                        return joint_error.joint_name == joint_name;
+                                    });
+                                if (selected_error != endpoint.joint_errors.end())
+                                {
+                                    const double achieved_delta =
+                                        selected_error->actual_position -
+                                        initial_position;
+                                    RCLCPP_INFO(
+                                        node->get_logger(),
+                                        "%s 执行数据: initial=%.9f rad, "
+                                        "target=%.9f rad, actual=%.9f rad, "
+                                        "achieved_delta=%.9f rad (%.6f deg), "
+                                        "target_error=%.9f rad",
+                                        joint_name.c_str(), initial_position,
+                                        selected_error->target_position,
+                                        selected_error->actual_position,
+                                        achieved_delta,
+                                        achieved_delta * kRadiansToDegrees,
+                                        selected_error->absolute_error);
+                                }
                                 RCLCPP_INFO(
                                     node->get_logger(),
                                     "真机运动冒烟验证完成，最大终点误差 %.9f rad",
