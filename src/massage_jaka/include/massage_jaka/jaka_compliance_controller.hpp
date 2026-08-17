@@ -69,6 +69,9 @@ public:
 
     massage_motion::ComplianceResult start(
         const massage_motion::ComplianceRequest & request) override;
+    // 只写入并读回真机导纳配置，不启用力控。
+    massage_motion::ComplianceResult configure(
+        const massage_motion::ComplianceRequest & request);
     massage_motion::ComplianceResult stop() override;
     bool update_reference(
         const massage_motion::ComplianceReference & reference) override;
@@ -125,7 +128,6 @@ private:
     std::vector<double> initial_joint_positions_;
     std::array<double, 3> initial_tool_translation_{};
     massage_motion::ComplianceRequest request_;
-    massage_motion::ComplianceReference latest_reference_;
     massage_motion::ComplianceResult last_result_;
 
     mutable std::mutex operation_mutex_;

@@ -326,6 +326,21 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
         std::this_thread::sleep_for(10ms);
     }
 
+    const auto configure_result = controller->configure(make_request());
+    ASSERT_TRUE(configure_result.success) << configure_result.message;
+    EXPECT_EQ(
+        controller->status(), massage_motion::ComplianceStatus::kIdle);
+    {
+        std::lock_guard<std::mutex> lock(enable_mutex);
+        EXPECT_TRUE(enable_requests.empty());
+    }
+    soft_limit_calls.store(0);
+    config_calls.store(0);
+    {
+        std::lock_guard<std::mutex> lock(config_mutex);
+        config_requests.clear();
+    }
+
     const auto start_result = controller->start(make_request());
     if (!start_result.success)
     {
@@ -345,7 +360,7 @@ TEST_F(JakaComplianceControllerTest, ConfiguresStartsMonitorsStopsAndResets)
     valid_reference.joint_names.assign(
         config.joint_names.begin(), config.joint_names.end());
     valid_reference.positions.assign(config.joint_names.size(), 0.0);
-    EXPECT_TRUE(controller->update_reference(valid_reference));
+    EXPECT_FALSE(controller->update_reference(valid_reference));
 
     const auto stop_result = controller->stop();
     EXPECT_TRUE(stop_result.success) << stop_result.message;

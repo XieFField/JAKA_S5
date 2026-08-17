@@ -86,6 +86,7 @@ int main(int argc, char ** argv)
     try
     {
         bool activate = false;
+        bool configure_only = false;
         bool parameters_confirmed = false;
         std::int64_t axis = 2;
         std::int64_t force_control_frame = 0;
@@ -94,18 +95,19 @@ int main(int argc, char ** argv)
         double maximum_torque = 1.0;
         double maximum_speed_wrench = 0.0;
         double rebound_wrench = 0.0;
-        double run_duration = 2.0;
-        double guard_timeout = 3.0;
+        double run_duration = 1.0;
+        double guard_timeout = 2.0;
         double readiness_timeout = 5.0;
         double baseline_duration = 2.0;
         double feedback_timeout = 0.5;
         double state_timeout = 0.5;
-        double maximum_joint_displacement = 0.02;
-        double maximum_linear_displacement = 0.01;
+        double maximum_joint_displacement = 0.005;
+        double maximum_linear_displacement = 0.002;
         std::string wrench_frame{"Link_06"};
         std::string base_frame{"world"};
         std::string tool_frame{"massage_tool_tip"};
         node->get_parameter_or("activate", activate, false);
+        node->get_parameter_or("configure_only", configure_only, false);
         node->get_parameter_or("parameters_confirmed", parameters_confirmed, false);
         node->get_parameter_or("axis", axis, std::int64_t{2});
         node->get_parameter_or(
@@ -116,16 +118,16 @@ int main(int argc, char ** argv)
         node->get_parameter_or(
             "maximum_speed_wrench", maximum_speed_wrench, 0.0);
         node->get_parameter_or("rebound_wrench", rebound_wrench, 0.0);
-        node->get_parameter_or("run_duration", run_duration, 2.0);
-        node->get_parameter_or("guard_timeout", guard_timeout, 3.0);
+        node->get_parameter_or("run_duration", run_duration, 1.0);
+        node->get_parameter_or("guard_timeout", guard_timeout, 2.0);
         node->get_parameter_or("readiness_timeout", readiness_timeout, 5.0);
         node->get_parameter_or("baseline_duration", baseline_duration, 2.0);
         node->get_parameter_or("feedback_timeout", feedback_timeout, 0.5);
         node->get_parameter_or("state_timeout", state_timeout, 0.5);
         node->get_parameter_or(
-            "maximum_joint_displacement", maximum_joint_displacement, 0.02);
+            "maximum_joint_displacement", maximum_joint_displacement, 0.005);
         node->get_parameter_or(
-            "maximum_linear_displacement", maximum_linear_displacement, 0.01);
+            "maximum_linear_displacement", maximum_linear_displacement, 0.002);
         node->get_parameter_or(
             "wrench_frame", wrench_frame, std::string{"Link_06"});
         node->get_parameter_or("base_frame", base_frame, std::string{"world"});
@@ -166,10 +168,20 @@ int main(int argc, char ** argv)
             throw std::invalid_argument(
                 "activate=true 时必须显式设置 parameters_confirmed=true");
         }
-        if (activate && maximum_speed_wrench <= 0.0)
+        if (activate && configure_only)
         {
             throw std::invalid_argument(
-                "activate=true 时必须显式设置正的 maximum_speed_wrench");
+                "activate 和 configure_only 不能同时为 true");
+        }
+        if (configure_only && !parameters_confirmed)
+        {
+            throw std::invalid_argument(
+                "configure_only=true 时必须显式设置 parameters_confirmed=true");
+        }
+        if ((activate || configure_only) && maximum_speed_wrench <= 0.0)
+        {
+            throw std::invalid_argument(
+                "配置或启用时必须显式设置正的 maximum_speed_wrench");
         }
 
         if (csv_path.empty())
@@ -386,7 +398,7 @@ int main(int argc, char ** argv)
             exit_code = 0;
         }
 
-        if (exit_code == 0 && activate)
+        if (exit_code == 0 && (activate || configure_only))
         {
             massage_motion::ComplianceRequest request;
             request.request_id = "real_compliance_smoke";
@@ -399,7 +411,8 @@ int main(int argc, char ** argv)
             request.max_linear_displacement = maximum_linear_displacement;
             request.timeout = guard_timeout;
 
-            const auto start_result = controller->start(request);
+            const auto start_result = configure_only ?
+                controller->configure(request) : controller->start(request);
             if (!start_result.success)
             {
                 RCLCPP_ERROR(
@@ -407,12 +420,22 @@ int main(int argc, char ** argv)
                     start_result.message.c_str());
                 exit_code = 3;
             }
+            else if (configure_only)
+            {
+                RCLCPP_INFO(
+                    node->get_logger(), "%s", start_result.message.c_str());
+                exit_code = 0;
+            }
             else
             {
                 RCLCPP_INFO(
                     node->get_logger(),
-                    "JAKA 柔顺独立冒烟已启动，axis=%ld, duration=%.3f s",
+                    "JAKA 力控生命周期冒烟已启动，axis=%ld, duration=%.3f s",
                     static_cast<long>(axis), run_duration);
+                RCLCPP_WARN(
+                    node->get_logger(),
+                    "本 demo 只验证力控配置、保护和启停，不验证外力引起的 "
+                    "TCP 位移；手动工具响应请使用 real_tool_drive_smoke_demo");
                 const auto stop_at = std::chrono::steady_clock::now() +
                     std::chrono::duration<double>(run_duration);
                 while (!interruption_requested.load() &&
@@ -445,7 +468,7 @@ int main(int argc, char ** argv)
                 {
                     RCLCPP_INFO(
                         node->get_logger(),
-                        "JAKA 柔顺冒烟完成并已关闭导纳，峰值 "
+                        "JAKA 力控生命周期冒烟完成并已关闭力控，峰值 "
                         "[%.4f, %.4f, %.4f, %.4f, %.4f, %.4f]",
                         stop_result.peak_absolute_wrench[0],
                         stop_result.peak_absolute_wrench[1],

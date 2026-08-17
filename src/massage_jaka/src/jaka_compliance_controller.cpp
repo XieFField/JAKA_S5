@@ -338,6 +338,123 @@ massage_motion::ComplianceResult JakaComplianceController::start(
     return result;
 }
 
+massage_motion::ComplianceResult JakaComplianceController::configure(
+    const massage_motion::ComplianceRequest & request)
+{
+    std::lock_guard<std::mutex> operation_lock(operation_mutex_);
+    if (status_.load() == massage_motion::ComplianceStatus::kActive ||
+        enable_may_be_active_.load())
+    {
+        return {
+            false,
+            massage_motion::ComplianceError::kAlreadyActive,
+            0,
+            "JAKA 柔顺控制仍处于启用或未确认关闭状态",
+            status_.load()};
+    }
+    if (monitor_thread_.joinable())
+    {
+        monitor_thread_.join();
+    }
+
+    const auto validation = massage_motion::validate_compliance_request(request);
+    if (!validation.valid)
+    {
+        const massage_motion::ComplianceResult result{
+            false,
+            validation.error,
+            0,
+            validation.message,
+            massage_motion::ComplianceStatus::kFault};
+        status_.store(result.status);
+        set_result(result);
+        return result;
+    }
+    for (std::size_t axis = 0; axis < request.enabled_axes.size(); ++axis)
+    {
+        if (request.enabled_axes[axis] &&
+            config_.maximum_speed_wrench[axis] <= 0.0)
+        {
+            const massage_motion::ComplianceResult result{
+                false,
+                massage_motion::ComplianceError::kInvalidRequest,
+                0,
+                "启用轴必须显式配置正的 JAKA maximum_speed_wrench",
+                massage_motion::ComplianceStatus::kFault};
+            status_.store(result.status);
+            set_result(result);
+            return result;
+        }
+    }
+
+    std::string robot_state_message;
+    if (!robot_ready(robot_state_message))
+    {
+        const massage_motion::ComplianceResult result{
+            false,
+            massage_motion::ComplianceError::kBackendUnavailable,
+            0,
+            robot_state_message,
+            massage_motion::ComplianceStatus::kFault};
+        status_.store(result.status);
+        set_result(result);
+        return result;
+    }
+    if (feedback().stale)
+    {
+        const massage_motion::ComplianceResult result{
+            false,
+            massage_motion::ComplianceError::kFeedbackUnavailable,
+            0,
+            "JAKA FT 反馈不可用或已经过期",
+            massage_motion::ComplianceStatus::kFault};
+        status_.store(result.status);
+        set_result(result);
+        return result;
+    }
+
+    std::string frame_message;
+    if (!set_force_control_frame(frame_message) ||
+        !set_soft_limits(request) || !configure_axes(request))
+    {
+        const massage_motion::ComplianceResult result{
+            false,
+            massage_motion::ComplianceError::kControlFailed,
+            0,
+            "JAKA 力控坐标系、软限幅或导纳参数配置失败: " +
+                frame_message,
+            massage_motion::ComplianceStatus::kFault};
+        status_.store(result.status);
+        set_result(result);
+        return result;
+    }
+
+    std::string verification_message;
+    if (!verify_configuration(
+            request, false, "idle", verification_message))
+    {
+        const massage_motion::ComplianceResult result{
+            false,
+            massage_motion::ComplianceError::kControlFailed,
+            0,
+            "JAKA 导纳配置读回不一致: " + verification_message,
+            massage_motion::ComplianceStatus::kFault};
+        status_.store(result.status);
+        set_result(result);
+        return result;
+    }
+
+    const massage_motion::ComplianceResult result{
+        true,
+        massage_motion::ComplianceError::kNone,
+        0,
+        "JAKA 导纳配置写入和关闭状态读回一致，未启用力控",
+        massage_motion::ComplianceStatus::kIdle};
+    status_.store(result.status);
+    set_result(result);
+    return result;
+}
+
 massage_motion::ComplianceResult JakaComplianceController::stop()
 {
     std::lock_guard<std::mutex> operation_lock(operation_mutex_);
@@ -418,11 +535,12 @@ bool JakaComplianceController::update_reference(
         return false;
     }
 
-    // JAKA 的导纳后端由目标力和内部参考驱动。这里保留状态机给出的名义
-    // 关节参考用于诊断，但不会绕过驱动再开启第二条 servo 命令通道。
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    latest_reference_ = reference;
-    return true;
+    // 当前 JAKA 驱动没有把轨迹参考与力控放在同一 SDK 控制通道中。
+    // 在实现组合执行入口前必须明确拒绝，禁止只缓存数据却向状态机报告成功。
+    RCLCPP_ERROR(
+        node_->get_logger(),
+        "JAKA 真机尚未实现导纳模式下的运动参考下发，拒绝伪成功");
+    return false;
 }
 
 massage_motion::ComplianceFeedback JakaComplianceController::feedback() const
@@ -615,7 +733,19 @@ bool JakaComplianceController::verify_configuration(
         response->force_control_frame != config_.force_control_frame ||
         response->control_owner != expected_owner)
     {
-        message = "力控开关、坐标系或控制权读回不一致";
+        message =
+            "力控状态读回不一致: enabled expected=" +
+            std::string(expected_enabled ? "true" : "false") +
+            " actual=" +
+            std::string(response->force_control_enabled ? "true" : "false") +
+            ", frame expected=" +
+            std::to_string(config_.force_control_frame) + " actual=" +
+            std::to_string(response->force_control_frame) +
+            ", owner expected=" + expected_owner + " actual=" +
+            response->control_owner + ", sensor_compensation=" +
+            std::to_string(response->sensor_compensation) +
+            ", compliance_type=" +
+            std::to_string(response->compliance_type);
         return false;
     }
     for (std::size_t axis = 0; axis < request.enabled_axes.size(); ++axis)

@@ -22,6 +22,8 @@ add_library(${PROJECT_NAME}
   src/jaka_compliance_guard.cpp
   src/jaka_error.cpp
   src/jaka_lifecycle_client.cpp
+  src/jaka_tool_drive_client.cpp
+  src/tool_response_analysis.cpp
 )
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -85,6 +87,19 @@ ament_target_dependencies(real_ft_observation_demo
   rclcpp
 )
 
+add_executable(real_tool_drive_smoke_demo
+  demo/real_tool_drive_smoke_demo.cpp
+)
+target_compile_features(real_tool_drive_smoke_demo PUBLIC cxx_std_17)
+target_link_libraries(real_tool_drive_smoke_demo ${PROJECT_NAME})
+ament_target_dependencies(real_tool_drive_smoke_demo
+  jaka_msgs
+  massage_motion
+  rclcpp
+  sensor_msgs
+  tf2_ros
+)
+
 install(DIRECTORY include/ DESTINATION include)
 install(
   TARGETS ${PROJECT_NAME}
@@ -100,6 +115,7 @@ install(
     real_compliance_smoke_demo
     real_ft_observation_demo
     real_motion_smoke_demo
+    real_tool_drive_smoke_demo
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -135,6 +151,23 @@ if(BUILD_TESTING)
     sensor_msgs
     std_srvs
     tf2_ros
+  )
+
+  ament_add_gtest(
+    tool_response_analysis_test
+    test/tool_response_analysis_test.cpp
+  )
+  target_link_libraries(tool_response_analysis_test ${PROJECT_NAME})
+
+  ament_add_gtest(
+    jaka_tool_drive_client_test
+    test/jaka_tool_drive_client_test.cpp
+  )
+  target_link_libraries(jaka_tool_drive_client_test ${PROJECT_NAME})
+  ament_target_dependencies(jaka_tool_drive_client_test
+    jaka_msgs
+    rclcpp
+    std_srvs
   )
 endif()
 
