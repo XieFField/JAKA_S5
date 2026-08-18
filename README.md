@@ -125,6 +125,9 @@ Gazebo、Robot State Publisher、MoveIt 和 RViz 均使用
 `massage_description/urdf/jaka_s5_massage.urdf.xacro`。规划和工艺目标统一使用
 `massage_tool_tip`，不能再把法兰 `Link_06` 当作接触点。
 
+当前程序化柔顺按压阶段的目标、实现边界和实施顺序见
+[当前阶段：程序化柔顺按压与基础业务动作](docs/current_stage_programmatic_compliance.md)。
+
 ## 仿真启动
 
 每个新终端先执行：
@@ -146,6 +149,17 @@ ros2 launch massage_bringup sim.launch.py use_rviz:=true
 ```bash
 ros2 launch massage_bringup compliant_press_task_demo.launch.py
 ```
+
+业务回待机目标保存在 `massage_bringup/default_targets.hpp` 的
+`kMassageHomeJointPositions` 常量中。通用仿真与 MoveIt 已启动后，默认先生成 3 个候选并择优，
+但不执行：
+
+```bash
+ros2 launch massage_bringup return_home_sim.launch.py \
+  execute:=false planning_attempts:=3
+```
+
+确认日志中的六轴计划行程后才单独设置 `execute:=true`。该 launch 不会自行启动 Gazebo 或 MoveIt。
 
 demo 完成后仿真基础设施会继续运行，便于检查 TF、Planning Scene 和控制器。检查完成后
 在 launch 终端按 `Ctrl-C` 统一关闭。保护路径示例仅用于仿真：
@@ -305,6 +319,64 @@ ros2 launch massage_bringup real_compliance_smoke_demo.launch.py
 对“目标力、内部参考和外部名义轨迹”的组合语义；在该语义确认前，项目不会同时开启
 轨迹命令通道和导纳命令通道。
 
+### 6. 业务回零
+
+项目回零位是业务待机位姿常量，不是编码器标定或六轴全零。真机驱动与唯一 MoveIt
+实例启动后，默认只规划多个候选，按关节路径长度和轨迹时长评分并输出选择结果：
+
+```bash
+ros2 launch massage_bringup return_home_real.launch.py \
+  execute:=false planning_attempts:=3
+```
+
+真机执行还需要显式双重确认，并受 `maximum_joint_travel`、机器人状态和终点误差门控：
+
+```bash
+ros2 launch massage_bringup return_home_real.launch.py \
+  execute:=true parameters_confirmed:=true \
+  velocity_scale:=0.02 acceleration_scale:=0.02 \
+  execution_timeout_margin:=15.0 \
+  maximum_joint_travel:=3.5 endpoint_tolerance:=0.01
+```
+
+`execution_timeout_margin` 不是绝对执行时限。节点从竞争规划器选中的轨迹读取最终
+`time_from_start`，实际超时为“轨迹预期时长 + 余量”，并在执行前打印这三个数值。
+JAKA Action 驱动按 SDK 固定的 8 ms 控制器插补周期工作，但不会要求主机每 8 ms
+完成一次同步网络调用。默认 `trajectory_servo_step_num=4`，因此主机每 32 ms 下发一个
+`servo_j(..., step_num=4)` 参考，由控制柜完成本段内部插补。轨迹执行期间后台状态轮询
+暂停占用 SDK 会话；连续调度超限会停止发送过期设定点并返回明确错误。每次执行将调用
+时刻、调用耗时、调度延迟、期望/实际关节位置及控制状态写入
+`/tmp/jaka_trajectory_<timestamp>.csv`。正常完成只退出 servo mode；只有故障或取消才调用
+`motion_abort()`。
+
+真机启动可显式覆盖调度门限：
+
+```bash
+ros2 launch massage_bringup real.launch.py \
+  robot_ip:=192.168.66.200 connect:=true start_move_group:=true \
+  trajectory_servo_step_num:=4 \
+  trajectory_maximum_lateness:=0.008 \
+  trajectory_maximum_consecutive_overruns:=1
+```
+
+`trajectory_servo_step_num` 与主机周期不能独立配置，主机周期始终由
+`step_num * 0.008 s` 推导。当前 32 ms 默认值来自首轮真机同步调用数据，仍需通过连续
+小位移运行确认，不能据离线测试直接判定长轨迹已经可用。
+
+该 launch 只启动回零 demo，不会重复启动驱动或 MoveIt。本功能当前只完成代码与离线验证，首次
+仿真执行和真机执行应分别保留运行验收记录。
+
+基础 `real.launch.py` 仍默认不运动。需要在机器人进入上电、使能且静止状态后自动执行回待机任务时，
+使用：
+
+```bash
+ros2 launch massage_bringup real.launch.py \
+  robot_ip:=192.168.66.200 connect:=true start_move_group:=true \
+  auto_home:=true auto_home_confirmed:=true
+```
+
+回待机节点会等待机器人进入可执行状态，再运行竞争规划和既有任务状态机；它不会代替登录、上电或使能。
+
 结束时按以下顺序关闭：
 
 ```bash
@@ -358,6 +430,7 @@ git checkout <MASSAGE_PROJECT_COMMIT_OR_TAG>
 ## 文档
 
 - [项目总体架构与进度](docs/project_outline.md)
+- [当前阶段：程序化柔顺按压与基础业务动作](docs/current_stage_programmatic_compliance.md)
 - [推拿手法与视觉反馈方案](docs/massage_technique_vision_plan.md)
 - [JAKA S5 首次运动前上机验证 Runbook](docs/jaka_pre_motion_runbook.md)
 - [JAKA 真机联调检查表](docs/jaka_real_hardware_integration.md)

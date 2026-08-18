@@ -15,6 +15,7 @@
 
 #include "massage_motion/motion_planning_sdk.hpp"
 #include "massage_motion/moveit_trajectory_executor.hpp"
+#include "massage_motion/execution_timing.hpp"
 #include "massage_motion/relative_joint_target.hpp"
 #include "massage_motion/trajectory_endpoint_error.hpp"
 
@@ -42,7 +43,7 @@ int main(int argc, char ** argv)
     double velocity_scale = 0.02;
     double acceleration_scale = 0.02;
     double planning_timeout = 5.0;
-    double execution_timeout = 20.0;
+    double execution_timeout_margin = 10.0;
     double joint_state_timeout = 3.0;
     double endpoint_tolerance = 0.01;
     node->get_parameter_or("execute", execute, false);
@@ -52,7 +53,8 @@ int main(int argc, char ** argv)
     node->get_parameter_or("velocity_scale", velocity_scale, 0.02);
     node->get_parameter_or("acceleration_scale", acceleration_scale, 0.02);
     node->get_parameter_or("planning_timeout", planning_timeout, 5.0);
-    node->get_parameter_or("execution_timeout", execution_timeout, 20.0);
+    node->get_parameter_or(
+        "execution_timeout_margin", execution_timeout_margin, 10.0);
     node->get_parameter_or("joint_state_timeout", joint_state_timeout, 3.0);
     node->get_parameter_or("endpoint_tolerance", endpoint_tolerance, 0.01);
 
@@ -65,7 +67,7 @@ int main(int argc, char ** argv)
         !std::isfinite(acceleration_scale) || acceleration_scale <= 0.0 ||
         acceleration_scale > 1.0 ||
         !std::isfinite(planning_timeout) || planning_timeout <= 0.0 ||
-        !std::isfinite(execution_timeout) || execution_timeout <= 0.0 ||
+        !std::isfinite(execution_timeout_margin) || execution_timeout_margin < 0.0 ||
         !std::isfinite(joint_state_timeout) || joint_state_timeout <= 0.0 ||
         !std::isfinite(endpoint_tolerance) || endpoint_tolerance <= 0.0)
     {
@@ -187,93 +189,109 @@ int main(int argc, char ** argv)
                 }
                 else
                 {
-                    auto trajectory_executor = std::make_shared<
-                        massage_motion::MoveItTrajectoryExecutor>(node);
-                    massage_motion::ExecutionRequest execution_request;
-                    execution_request.request_id = "real_motion_smoke_execution";
-                    execution_request.robot_trajectory = plan.trajectory;
-                    execution_request.timeout = execution_timeout;
-                    const auto execution =
-                        trajectory_executor->execute(execution_request);
-                    if (!execution.success)
+                    massage_motion::ExecutionTimingPolicy timing_policy;
+                    timing_policy.margin = execution_timeout_margin;
+                    const auto timing = massage_motion::calculate_execution_timing(
+                        plan.trajectory, timing_policy);
+                    if (!timing.valid)
                     {
                         RCLCPP_ERROR(
                             node->get_logger(),
-                            "真机冒烟轨迹执行失败: %s",
-                            execution.message.c_str());
+                            "无法确定真机冒烟轨迹执行超时: %s",
+                            timing.message.c_str());
                         exit_code = 4;
                     }
                     else
                     {
-                        sensor_msgs::msg::JointState final_state;
+                        RCLCPP_INFO(node->get_logger(), "%s", timing.message.c_str());
+                        auto trajectory_executor = std::make_shared<
+                            massage_motion::MoveItTrajectoryExecutor>(node);
+                        massage_motion::ExecutionRequest execution_request;
+                        execution_request.request_id = "real_motion_smoke_execution";
+                        execution_request.robot_trajectory = plan.trajectory;
+                        execution_request.timeout = timing.timeout;
+                        const auto execution =
+                            trajectory_executor->execute(execution_request);
+                        if (!execution.success)
                         {
-                            std::unique_lock<std::mutex> lock(state_mutex);
-                            const auto sequence_after_execution = state_sequence;
-                            if (!state_condition.wait_for(
-                                    lock,
-                                    std::chrono::duration<double>(joint_state_timeout),
-                                    [&state_sequence, sequence_after_execution]()
-                                    {
-                                        return state_sequence > sequence_after_execution;
-                                    }))
-                            {
-                                RCLCPP_ERROR(
-                                    node->get_logger(),
-                                    "等待执行后的 /joint_states 更新超时");
-                                exit_code = 5;
-                            }
-                            else
-                            {
-                                final_state = latest_state;
-                            }
+                            RCLCPP_ERROR(
+                                node->get_logger(),
+                                "真机冒烟轨迹执行失败: %s",
+                                execution.message.c_str());
+                            exit_code = 4;
                         }
-                        if (exit_code != 5)
+                        else
                         {
-                            const auto endpoint =
-                                massage_motion::calculate_trajectory_endpoint_error(
-                                    plan.trajectory, final_state);
-                            if (!endpoint.valid ||
-                                endpoint.max_absolute_error > endpoint_tolerance)
+                            sensor_msgs::msg::JointState final_state;
                             {
-                                RCLCPP_ERROR(
-                                    node->get_logger(),
-                                    "终点校验失败: valid=%s, max_error=%.9f rad",
-                                    endpoint.valid ? "true" : "false",
-                                    endpoint.max_absolute_error);
-                                exit_code = 5;
-                            }
-                            else
-                            {
-                                const auto selected_error = std::find_if(
-                                    endpoint.joint_errors.begin(),
-                                    endpoint.joint_errors.end(),
-                                    [&joint_name](const auto & joint_error)
-                                    {
-                                        return joint_error.joint_name == joint_name;
-                                    });
-                                if (selected_error != endpoint.joint_errors.end())
+                                std::unique_lock<std::mutex> lock(state_mutex);
+                                const auto sequence_after_execution = state_sequence;
+                                if (!state_condition.wait_for(
+                                        lock,
+                                        std::chrono::duration<double>(joint_state_timeout),
+                                        [&state_sequence, sequence_after_execution]()
+                                        {
+                                            return state_sequence > sequence_after_execution;
+                                        }))
                                 {
-                                    const double achieved_delta =
-                                        selected_error->actual_position -
-                                        initial_position;
+                                    RCLCPP_ERROR(
+                                        node->get_logger(),
+                                        "等待执行后的 /joint_states 更新超时");
+                                    exit_code = 5;
+                                }
+                                else
+                                {
+                                    final_state = latest_state;
+                                }
+                            }
+                            if (exit_code != 5)
+                            {
+                                const auto endpoint =
+                                    massage_motion::calculate_trajectory_endpoint_error(
+                                        plan.trajectory, final_state);
+                                if (!endpoint.valid ||
+                                    endpoint.max_absolute_error > endpoint_tolerance)
+                                {
+                                    RCLCPP_ERROR(
+                                        node->get_logger(),
+                                        "终点校验失败: valid=%s, max_error=%.9f rad",
+                                        endpoint.valid ? "true" : "false",
+                                        endpoint.max_absolute_error);
+                                    exit_code = 5;
+                                }
+                                else
+                                {
+                                    const auto selected_error = std::find_if(
+                                        endpoint.joint_errors.begin(),
+                                        endpoint.joint_errors.end(),
+                                        [&joint_name](const auto & joint_error)
+                                        {
+                                            return joint_error.joint_name == joint_name;
+                                        });
+                                    if (selected_error != endpoint.joint_errors.end())
+                                    {
+                                        const double achieved_delta =
+                                            selected_error->actual_position -
+                                            initial_position;
+                                        RCLCPP_INFO(
+                                            node->get_logger(),
+                                            "%s 执行数据: initial=%.9f rad, "
+                                            "target=%.9f rad, actual=%.9f rad, "
+                                            "achieved_delta=%.9f rad (%.6f deg), "
+                                            "target_error=%.9f rad",
+                                            joint_name.c_str(), initial_position,
+                                            selected_error->target_position,
+                                            selected_error->actual_position,
+                                            achieved_delta,
+                                            achieved_delta * kRadiansToDegrees,
+                                            selected_error->absolute_error);
+                                    }
                                     RCLCPP_INFO(
                                         node->get_logger(),
-                                        "%s 执行数据: initial=%.9f rad, "
-                                        "target=%.9f rad, actual=%.9f rad, "
-                                        "achieved_delta=%.9f rad (%.6f deg), "
-                                        "target_error=%.9f rad",
-                                        joint_name.c_str(), initial_position,
-                                        selected_error->target_position,
-                                        selected_error->actual_position,
-                                        achieved_delta,
-                                        achieved_delta * kRadiansToDegrees,
-                                        selected_error->absolute_error);
+                                        "真机运动冒烟验证完成，最大终点误差 %.9f rad",
+                                        endpoint.max_absolute_error);
+                                    exit_code = 0;
                                 }
-                                RCLCPP_INFO(
-                                    node->get_logger(),
-                                    "真机运动冒烟验证完成，最大终点误差 %.9f rad",
-                                    endpoint.max_absolute_error);
-                                exit_code = 0;
                             }
                         }
                     }

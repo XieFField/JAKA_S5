@@ -8,6 +8,12 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>jaka_msgs</depend>
+  <depend>massage_motion</depend>
+  <depend>massage_task</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
@@ -18,8 +24,6 @@
   <exec_depend>kinematics_interface_kdl</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
   <exec_depend>massage_description</exec_depend>
-  <exec_depend>massage_motion</exec_depend>
-  <exec_depend>massage_task</exec_depend>
   <exec_depend>jaka_s5_moveit_config</exec_depend>
   <exec_depend>jaka_driver</exec_depend>
   <exec_depend>massage_jaka</exec_depend>

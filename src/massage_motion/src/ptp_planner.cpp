@@ -73,11 +73,30 @@ ValidationResult PtpPlanner::configure_target(const MotionRequest & request)
         };
     }
 
+    if (const auto * named_target =
+        std::get_if<NamedJointTarget>(&request.target))
+    {
+        if (!move_group().setNamedTarget(named_target->name))
+        {
+            return {
+                false,
+                MotionError::kInvalidRequest,
+                "SRDF 中不存在命名关节目标: " + named_target->name
+            };
+        }
+
+        return {
+            true,
+            MotionError::kNone,
+            "PTP 命名关节目标设置成功: " + named_target->name
+        };
+    }
+
     // 即使前置校验未来发生变化，本层仍保证拒绝无法解释的目标类型。
     return {
         false,
         MotionError::kTargetTypeMismatch,
-        "PtpPlanner 仅支持 JointTarget 和 PoseTarget"
+        "PtpPlanner 仅支持 JointTarget、NamedJointTarget 和 PoseTarget"
     };
 }
 

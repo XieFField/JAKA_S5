@@ -24,6 +24,30 @@ TEST(MotionValidationTest, AcceptsValidPtpJointTarget)
     EXPECT_EQ(result.error, MotionError::kNone);
 }
 
+TEST(MotionValidationTest, AcceptsValidPtpNamedJointTarget)
+{
+    MotionRequest request;
+    request.motion_type = MotionType::kPtp;
+    request.target = NamedJointTarget{"massage_home"};
+
+    const ValidationResult result = validate_motion_request(request);
+
+    EXPECT_TRUE(result.valid);
+    EXPECT_EQ(result.error, MotionError::kNone);
+}
+
+TEST(MotionValidationTest, RejectsEmptyPtpNamedJointTarget)
+{
+    MotionRequest request;
+    request.motion_type = MotionType::kPtp;
+    request.target = NamedJointTarget{};
+
+    const ValidationResult result = validate_motion_request(request);
+
+    EXPECT_FALSE(result.valid);
+    EXPECT_EQ(result.error, MotionError::kInvalidRequest);
+}
+
 TEST(MotionValidationTest, RejectsZeroVelocityScale)
 {
     // 先构造一个其他字段都有效的请求，只让 velocity_scale 出错。

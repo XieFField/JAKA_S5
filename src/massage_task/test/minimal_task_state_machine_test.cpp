@@ -15,7 +15,16 @@ public:
         const massage_motion::MotionRequest &) override
     {
         ++call_count;
-        return next_result;
+        auto result = next_result;
+        if (result.success &&
+            result.trajectory.joint_trajectory.points.empty() &&
+            result.trajectory.multi_dof_joint_trajectory.points.empty())
+        {
+            trajectory_msgs::msg::JointTrajectoryPoint point;
+            point.time_from_start.sec = 1;
+            result.trajectory.joint_trajectory.points.push_back(point);
+        }
+        return result;
     }
 };
 
@@ -61,7 +70,7 @@ TEST(MinimalTaskStateMachineTest, PlanningAndExecutionSuccess)
 
     massage_task::TaskRequest request;
     request.task_id = "success_test";
-    request.execution_timeout = 5.0;
+    request.execution_timing.margin = 4.0;
 
     const auto result = machine.run(request);
 
@@ -73,7 +82,7 @@ TEST(MinimalTaskStateMachineTest, PlanningAndExecutionSuccess)
     EXPECT_EQ(planner->call_count, 1);
     EXPECT_EQ(executor->execute_call_count, 1);
     EXPECT_EQ(executor->last_request.request_id, request.task_id);
-    EXPECT_DOUBLE_EQ(executor->last_request.timeout, request.execution_timeout);
+    EXPECT_DOUBLE_EQ(executor->last_request.timeout, 5.0);
 }
 
 TEST(MinimalTaskStateMachineTest, PlanningFailure)
@@ -88,7 +97,6 @@ TEST(MinimalTaskStateMachineTest, PlanningFailure)
 
     massage_task::TaskRequest request;
     request.task_id = "planning_failure_test";
-    request.execution_timeout = 5.0;
 
     const auto result = machine.run(request);
 
@@ -98,6 +106,45 @@ TEST(MinimalTaskStateMachineTest, PlanningFailure)
     EXPECT_EQ(machine.state(), massage_task::TaskState::kFault);
 
     EXPECT_EQ(planner->call_count, 1);
+    EXPECT_EQ(executor->execute_call_count, 0);
+}
+
+TEST(MinimalTaskStateMachineTest, PlanOnlyDoesNotCallExecutor)
+{
+    auto planner = std::make_shared<FakePlanner>();
+    auto executor = std::make_shared<FakeExecutor>();
+    planner->next_result.success = true;
+
+    massage_task::MinimalTaskStateMachine machine(planner, executor);
+    massage_task::TaskRequest request;
+    request.task_id = "plan_only_test";
+    request.execute = false;
+
+    const auto result = machine.run(request);
+
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.final_state, massage_task::TaskState::kCompleted);
+    EXPECT_EQ(planner->call_count, 1);
+    EXPECT_EQ(executor->execute_call_count, 0);
+}
+
+TEST(MinimalTaskStateMachineTest, InvalidTimingDoesNotCallExecutor)
+{
+    auto planner = std::make_shared<FakePlanner>();
+    auto executor = std::make_shared<FakeExecutor>();
+    planner->next_result.success = true;
+
+    massage_task::MinimalTaskStateMachine machine(planner, executor);
+    massage_task::TaskRequest request;
+    request.task_id = "invalid_timing_test";
+    request.execution_timing.margin =
+        std::numeric_limits<double>::quiet_NaN();
+
+    const auto result = machine.run(request);
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error, massage_task::TaskError::kInvalidRequest);
+    EXPECT_EQ(result.final_state, massage_task::TaskState::kFault);
     EXPECT_EQ(executor->execute_call_count, 0);
 }
 
@@ -117,7 +164,6 @@ TEST(MinimalTaskStateMachineTest, ExecutionFailure)
 
     massage_task::TaskRequest request;
     request.task_id = "execution_failure_test";
-    request.execution_timeout = 5.0;
 
     const auto result = machine.run(request);
 
@@ -146,7 +192,6 @@ TEST(MinimalTaskStateMachineTest, ExecutionCanceled)
 
     massage_task::TaskRequest request;
     request.task_id = "execution_canceled_test";
-    request.execution_timeout = 5.0;
 
     const auto result = machine.run(request);
 
@@ -175,7 +220,6 @@ TEST(MinimalTaskStateMachineTest, ExecutionTimedOut)
 
     massage_task::TaskRequest request;
     request.task_id = "execution_timeout_test";
-    request.execution_timeout = 5.0;
 
     const auto result = machine.run(request);
 
@@ -204,7 +248,6 @@ TEST(MinimalTaskStateMachineTest, RunWhileBusy)
 
     massage_task::TaskRequest request;
     request.task_id = "run_while_busy_test";
-    request.execution_timeout = 5.0;
 
     // 第一次运行
     const auto result1 = machine.run(request);
@@ -235,7 +278,6 @@ TEST(MinimalTaskStateMachineTest, ResetAfterCompletion)
 
     massage_task::TaskRequest request;
     request.task_id = "reset_after_completion_test";
-    request.execution_timeout = 5.0;
 
     const auto result1 = machine.run(request);
     EXPECT_TRUE(result1.success);

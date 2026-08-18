@@ -76,7 +76,16 @@ ValidationResult validate_motion_request(const MotionRequest & request)
         return valid_result();
       }
 
-      return target_type_mismatch("PTP requires a JointTarget or PoseTarget");
+      if (const auto * named_target = std::get_if<NamedJointTarget>(&request.target))
+      {
+        if (named_target->name.empty())
+          return invalid_request("PTP named joint target must not be empty");
+
+        return valid_result();
+      }
+
+      return target_type_mismatch(
+        "PTP requires a JointTarget, NamedJointTarget or PoseTarget");
 
     case MotionType::kLin:
       if (const auto * pose_target = std::get_if<PoseTarget>(&request.target)) 

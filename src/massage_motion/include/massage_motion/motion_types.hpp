@@ -43,6 +43,13 @@ struct JointTarget
   std::vector<double> positions;
 };
 
+// 引用 SRDF 中的命名关节状态。业务位姿只在 SRDF 中保存一次，避免不同
+// 执行入口各自维护一份关节常量。
+struct NamedJointTarget
+{
+  std::string name;
+};
+
 // PoseStamped 同时保存目标位姿及该位姿所属的参考坐标系。
 struct PoseTarget
 {
@@ -58,7 +65,8 @@ struct CircularTarget
 
 // 使用 variant 保证一次请求只保存一种目标，避免一个大结构体同时包含
 // 关节、位姿和圆弧字段，并产生无效的字段组合。
-using MotionTarget = std::variant<JointTarget, PoseTarget, CircularTarget>;
+using MotionTarget =
+  std::variant<JointTarget, NamedJointTarget, PoseTarget, CircularTarget>;
 
 // 规划器实例生命周期内通常保持不变的配置。
 struct PlannerConfig

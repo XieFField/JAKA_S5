@@ -10,6 +10,7 @@
 
 #include "massage_motion/compliance_types.hpp"
 #include "massage_motion/execution_types.hpp"
+#include "massage_motion/execution_timing.hpp"
 #include "massage_motion/motion_types.hpp"
 
 namespace massage_task
@@ -55,7 +56,7 @@ struct PressTaskRequest
     double precontact_velocity_scale{0.05};
     double press_velocity_scale{0.005};
     double planning_timeout{5.0};
-    double execution_timeout{12.0};
+    massage_motion::ExecutionTimingPolicy execution_timing;
     double contact_threshold{0.1};
     double maximum_contact_wrench{1.0};
     double contact_wait_timeout{1.0};

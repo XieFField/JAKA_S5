@@ -102,7 +102,6 @@ PressTaskResult PressTaskStateMachine::run(const PressTaskRequest & request)
         finite_positive(request.press_velocity_scale) &&
         request.press_velocity_scale <= 1.0 &&
         finite_positive(request.planning_timeout) &&
-        finite_positive(request.execution_timeout) &&
         finite_positive(request.contact_threshold) &&
         finite_positive(request.maximum_contact_wrench) &&
         request.contact_threshold < request.maximum_contact_wrench &&
@@ -199,7 +198,16 @@ PressTaskResult PressTaskStateMachine::run(const PressTaskRequest & request)
         massage_motion::ExecutionRequest execution_request;
         execution_request.request_id = motion_request.request_id + "_execution";
         execution_request.robot_trajectory = result.last_plan_result.trajectory;
-        execution_request.timeout = request.execution_timeout;
+        const auto timing = massage_motion::calculate_execution_timing(
+            execution_request.robot_trajectory, request.execution_timing);
+        if (!timing.valid)
+        {
+            set_primary_failure(
+                PressTaskError::kInvalidRequest,
+                "无法确定轨迹执行超时: " + timing.message);
+            return false;
+        }
+        execution_request.timeout = timing.timeout;
         state_.store(execute_state);
         result.last_execution_result = executor_->execute(execution_request);
         if (!result.last_execution_result.success)

@@ -10,6 +10,7 @@
 #include <string>
 
 #include "massage_motion/execution_types.hpp"
+#include "massage_motion/execution_timing.hpp"
 #include "massage_motion/motion_types.hpp"
 
 namespace massage_task
@@ -31,18 +32,20 @@ enum class TaskError : std::int32_t
 {
   kNone = 0,
   kBusy,
+  kInvalidRequest,
   kPlanningFailed,
   kExecutionFailed,
   kCanceled,
   kTimeout,
 };
 
-// 上层提交运动请求及该轨迹允许使用的总执行时间。
+// 上层提交运动请求；执行超时由规划结果的时间参数化和策略共同决定。
 struct TaskRequest
 {
   std::string task_id;
   massage_motion::MotionRequest motion_request;
-  double execution_timeout{0.0};
+  massage_motion::ExecutionTimingPolicy execution_timing;
+  bool execute{true};
 };
 
 // 同时保留规划和执行原始结果，便于状态机上层进行日志与故障诊断。

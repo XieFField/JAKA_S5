@@ -64,8 +64,8 @@ def generate_launch_description():
                 "planning_timeout": ParameterValue(
                     LaunchConfiguration("planning_timeout"), value_type=float
                 ),
-                "execution_timeout": ParameterValue(
-                    LaunchConfiguration("execution_timeout"), value_type=float
+                "execution_timeout_margin": ParameterValue(
+                    LaunchConfiguration("execution_timeout_margin"), value_type=float
                 ),
                 "joint_state_timeout": ParameterValue(
                     LaunchConfiguration("joint_state_timeout"),
@@ -87,7 +87,7 @@ def generate_launch_description():
         DeclareLaunchArgument("velocity_scale", default_value="0.02"),
         DeclareLaunchArgument("acceleration_scale", default_value="0.02"),
         DeclareLaunchArgument("planning_timeout", default_value="5.0"),
-        DeclareLaunchArgument("execution_timeout", default_value="20.0"),
+        DeclareLaunchArgument("execution_timeout_margin", default_value="10.0"),
         DeclareLaunchArgument("joint_state_timeout", default_value="3.0"),
         DeclareLaunchArgument("endpoint_tolerance", default_value="0.01"),
         node,

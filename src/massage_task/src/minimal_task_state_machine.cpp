@@ -1,5 +1,7 @@
 #include "massage_task/minimal_task_state_machine.hpp"
 
+#include <string>
+
 namespace massage_task
 {
 using namespace massage_motion;
@@ -66,14 +68,43 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
         };
     }
 
+    if (!request.execute)
+    {
+        state_.store(TaskState::kCompleted);
+        return {
+            true,
+            TaskState::kCompleted,
+            TaskError::kNone,
+            "只规划任务完成，未调用轨迹执行器",
+            plan_result,
+            empty_execution_result
+        };
+    }
+
+    const auto timing = calculate_execution_timing(
+        plan_result.trajectory, request.execution_timing);
+    if (!timing.valid)
+    {
+        state_.store(TaskState::kFault);
+        return {
+            false,
+            TaskState::kFault,
+            TaskError::kInvalidRequest,
+            "无法确定轨迹执行超时: " + timing.message,
+            plan_result,
+            empty_execution_result
+        };
+    }
+
     ExecutionRequest execution_request;
     execution_request.request_id = request.task_id;
     execution_request.robot_trajectory = plan_result.trajectory;
-    execution_request.timeout = request.execution_timeout;
+    execution_request.timeout = timing.timeout;
 
     state_.store(TaskState::kExecuting);
 
     ExecutionResult execution_result = executor_->execute(execution_request);
+    const std::string task_message = execution_result.message + "; " + timing.message;
 
     if(execution_result.success)
     {
@@ -83,7 +114,7 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
             true,
             TaskState::kCompleted,
             TaskError::kNone,
-            execution_result.message,
+            task_message,
             plan_result,
             execution_result
         };
@@ -96,7 +127,7 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
             false,
             TaskState::kCanceled,
             TaskError::kCanceled,
-            execution_result.message,
+            task_message,
             plan_result,
             execution_result
         };
@@ -109,7 +140,7 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
             false,
             TaskState::kFault,
             TaskError::kTimeout,
-            execution_result.message,
+            task_message,
             plan_result,
             execution_result
         };
@@ -120,7 +151,7 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
         false,
         TaskState::kFault,
         TaskError::kExecutionFailed,
-        execution_result.message,
+        task_message,
         plan_result,
         execution_result
     };

@@ -26,7 +26,6 @@
     <joint name="joint_5" value="1.5707"/>
     <joint name="joint_6" value="0"/>
   </group_state>
-
   <disable_collisions link1="Link_00" link2="Link_01" reason="Adjacent"/>
   <disable_collisions link1="Link_01" link2="Link_02" reason="Adjacent"/>
   <disable_collisions link1="Link_01" link2="Link_04" reason="Never"/>

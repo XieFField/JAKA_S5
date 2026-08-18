@@ -188,18 +188,19 @@ try
     if(test_mode == "timeout")
     {
         // 该超时包含 Action Server 等待、Goal 响应和轨迹执行的总时间。
-        task_request.execution_timeout = 0.05;
+        task_request.execution_timing.timeout_override = 0.05;
+        task_request.execution_timing.allow_shorter_timeout_for_testing = true;
     }
     else
     {
-        task_request.execution_timeout = 10.0;
+        task_request.execution_timing.margin = 5.0;
     }
 
     RCLCPP_INFO(
         node->get_logger(),
-        "开始状态机实验，模式: %s，执行超时: %.3f 秒",
+        "开始状态机实验，模式: %s，执行超时余量: %.3f 秒",
         test_mode.c_str(),
-        task_request.execution_timeout
+        task_request.execution_timing.margin
     );
 
     // 等待第一条反馈
@@ -235,7 +236,7 @@ try
         preparation_task_request.task_id =
             test_mode + "_preparation_task";
         preparation_task_request.motion_request = preparation_motion_request;
-        preparation_task_request.execution_timeout = 10.0;
+        preparation_task_request.execution_timing.margin = 5.0;
 
         RCLCPP_INFO(
             node->get_logger(),

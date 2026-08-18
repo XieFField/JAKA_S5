@@ -26,9 +26,12 @@ add_library(${PROJECT_NAME}
   src/lin_planner.cpp
   src/circ_planner.cpp
   src/motion_planning_sdk.cpp
+  src/competitive_motion_planner.cpp
   src/execution_types.cpp
   src/execution_validation.cpp
+  src/execution_timing.cpp
   src/moveit_trajectory_executor.cpp
+  src/guarded_trajectory_executor.cpp
   src/trajectory_endpoint_error.cpp
   src/relative_joint_target.cpp
   src/single_axis_admittance.cpp
@@ -127,6 +130,14 @@ if(BUILD_TESTING)
     ${PROJECT_NAME}
   )
 
+  ament_add_gtest(execution_timing_test
+    test/execution_timing_test.cpp
+  )
+
+  target_link_libraries(execution_timing_test
+    ${PROJECT_NAME}
+  )
+
   ament_add_gtest(trajectory_endpoint_error_test
     test/trajectory_endpoint_error_test.cpp
   )
@@ -180,6 +191,22 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(relative_joint_target_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(competitive_motion_planner_test
+    test/competitive_motion_planner_test.cpp
+  )
+
+  target_link_libraries(competitive_motion_planner_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(guarded_trajectory_executor_test
+    test/guarded_trajectory_executor_test.cpp
+  )
+
+  target_link_libraries(guarded_trajectory_executor_test
     ${PROJECT_NAME}
   )
 endif()
