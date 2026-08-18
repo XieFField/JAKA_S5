@@ -239,16 +239,22 @@ ros2 launch massage_bringup real_motion_smoke_demo.launch.py
 
 ```bash
 ros2 launch massage_bringup real_motion_smoke_demo.launch.py \
-  execute:=true joint_name:=joint_1 joint_delta:=0.02 \
-  endpoint_tolerance:=0.005 \
+  execute:=true joint_name:=joint_1 joint_delta:=0.01 \
+  endpoint_tolerance:=0.002 \
   velocity_scale:=0.02 acceleration_scale:=0.02
 ```
 
 节点会拒绝零增量、超过 `maximum_joint_delta` 的增量、无效关节状态、非有限参数以及
-终点误差超限。该入口要求 `real.launch.py` 已以 `start_move_group:=true` 启动。
+终点误差超限；`endpoint_tolerance` 还必须严格小于 `abs(joint_delta)`，避免机械臂未实际
+到达目标时误判成功。驱动和独立 demo 的默认终点容差均为 `0.002 rad`。该入口要求
+`real.launch.py` 已以 `start_move_group:=true` 启动。
 
-真机已经完成 `joint_1` 的 `+0.02/-0.02 rad` 正反向低速执行、终点误差检查、超时取消和
-取消后恢复执行。更大幅度或其他关节仍须继续使用相对目标和独立参数复核。
+收紧驱动终点容差为 `0.002 rad` 后，真机已完成一次 `joint_1 +0.01 rad` 小位移闭环：
+15 个 Servo 分段在 `0.141695 s` 内连续入队，队列饥饿为零；最终实际位移
+`0.008140218 rad`、终点误差 `0.001859782 rad`，Action、MoveIt 和 demo 均返回成功。
+该结果接近容差边界，只证明本次小位移链路通过；重复精度、反向运动和长轨迹仍需继续验证。
+完整记录见
+[JAKA Servo 队列真机小位移测试报告](docs/jaka_servo_queue_real_test_report_2026-08-18.md)。
 
 不改变目标关节位置的 Action 协议验证用于检查 feedback、并发 Goal 拒绝、取消和取消后恢复。
 默认只检查 `/joint_states` 与 Action 是否存在；显式启用后，节点将当前六轴位置作为目标，
@@ -336,16 +342,16 @@ ros2 launch massage_bringup return_home_real.launch.py \
   execute:=true parameters_confirmed:=true \
   velocity_scale:=0.02 acceleration_scale:=0.02 \
   execution_timeout_margin:=15.0 \
-  maximum_joint_travel:=3.5 endpoint_tolerance:=0.01
+  maximum_joint_travel:=3.5 endpoint_tolerance:=0.002
 ```
 
 `execution_timeout_margin` 不是绝对执行时限。节点从竞争规划器选中的轨迹读取最终
 `time_from_start`，实际超时为“轨迹预期时长 + 余量”，并在执行前打印这三个数值。
-JAKA Action 驱动按 SDK 固定的 8 ms 控制器插补周期工作，但不会要求主机每 8 ms
-完成一次同步网络调用。默认 `trajectory_servo_step_num=4`，因此主机每 32 ms 下发一个
-`servo_j(..., step_num=4)` 参考，由控制柜完成本段内部插补。轨迹执行期间后台状态轮询
-暂停占用 SDK 会话；连续调度超限会停止发送过期设定点并返回明确错误。每次执行将调用
-时刻、调用耗时、调度延迟、期望/实际关节位置及控制状态写入
+JAKA Action 驱动按 SDK 固定的 8 ms 控制器插补周期工作。每个 MoveIt 轨迹段根据
+`dt / 0.008` 计算 `step_num`，超过 `trajectory_maximum_servo_step_num` 的长段才线性拆分；
+随后按 SDK 约定连续提交全部分段，由控制柜按插补时间轴执行。轨迹执行期间后台状态轮询
+暂停占用 SDK 会话；连续队列饥饿会停止提交并返回明确错误。每次执行将调用
+时刻、调用耗时、队列饥饿量、期望/实际关节位置及控制状态写入
 `/tmp/jaka_trajectory_<timestamp>.csv`。正常完成只退出 servo mode；只有故障或取消才调用
 `motion_abort()`。
 
@@ -354,14 +360,16 @@ JAKA Action 驱动按 SDK 固定的 8 ms 控制器插补周期工作，但不会
 ```bash
 ros2 launch massage_bringup real.launch.py \
   robot_ip:=192.168.66.200 connect:=true start_move_group:=true \
-  trajectory_servo_step_num:=4 \
-  trajectory_maximum_lateness:=0.008 \
-  trajectory_maximum_consecutive_overruns:=1
+  trajectory_maximum_servo_step_num:=50 \
+  trajectory_servo_filter_cutoff_hz:=0.5 \
+  trajectory_maximum_queue_starvation:=0.008 \
+  trajectory_maximum_consecutive_starvations:=1
 ```
 
-`trajectory_servo_step_num` 与主机周期不能独立配置，主机周期始终由
-`step_num * 0.008 s` 推导。当前 32 ms 默认值来自首轮真机同步调用数据，仍需通过连续
-小位移运行确认，不能据离线测试直接判定长轨迹已经可用。
+`trajectory_maximum_servo_step_num` 是单次控制柜插补步数上限，不是主机发送周期。
+`trajectory_servo_filter_cutoff_hz=0` 表示显式关闭 Servo 滤波；默认 `0.5` 与官方
+MoveIt 示例一致。队列实现已经通过一次 `0.01 rad` 真机小位移验证，但不能据此直接判定
+长轨迹已经可用。
 
 该 launch 只启动回零 demo，不会重复启动驱动或 MoveIt。本功能当前只完成代码与离线验证，首次
 仿真执行和真机执行应分别保留运行验收记录。

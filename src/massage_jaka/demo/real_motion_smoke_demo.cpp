@@ -45,7 +45,7 @@ int main(int argc, char ** argv)
     double planning_timeout = 5.0;
     double execution_timeout_margin = 10.0;
     double joint_state_timeout = 3.0;
-    double endpoint_tolerance = 0.01;
+    double endpoint_tolerance = 0.002;
     node->get_parameter_or("execute", execute, false);
     node->get_parameter_or("joint_name", joint_name, std::string{"joint_1"});
     node->get_parameter_or("joint_delta", joint_delta, 0.01);
@@ -56,7 +56,7 @@ int main(int argc, char ** argv)
     node->get_parameter_or(
         "execution_timeout_margin", execution_timeout_margin, 10.0);
     node->get_parameter_or("joint_state_timeout", joint_state_timeout, 3.0);
-    node->get_parameter_or("endpoint_tolerance", endpoint_tolerance, 0.01);
+    node->get_parameter_or("endpoint_tolerance", endpoint_tolerance, 0.002);
 
     if (joint_name.empty() ||
         !std::isfinite(joint_delta) || joint_delta == 0.0 ||
@@ -72,6 +72,16 @@ int main(int argc, char ** argv)
         !std::isfinite(endpoint_tolerance) || endpoint_tolerance <= 0.0)
     {
         RCLCPP_ERROR(node->get_logger(), "真机运动冒烟参数无效");
+        rclcpp::shutdown();
+        return 2;
+    }
+    if (endpoint_tolerance >= std::abs(joint_delta))
+    {
+        RCLCPP_ERROR(
+            node->get_logger(),
+            "endpoint_tolerance 必须严格小于 abs(joint_delta)，当前 "
+            "tolerance=%.9f rad, delta=%.9f rad",
+            endpoint_tolerance, joint_delta);
         rclcpp::shutdown();
         return 2;
     }
@@ -249,43 +259,59 @@ int main(int argc, char ** argv)
                                 const auto endpoint =
                                     massage_motion::calculate_trajectory_endpoint_error(
                                         plan.trajectory, final_state);
-                                if (!endpoint.valid ||
+                                const auto selected_error = std::find_if(
+                                    endpoint.joint_errors.begin(),
+                                    endpoint.joint_errors.end(),
+                                    [&joint_name](const auto & joint_error)
+                                    {
+                                        return joint_error.joint_name == joint_name;
+                                    });
+                                const bool selected_joint_valid =
+                                    selected_error != endpoint.joint_errors.end();
+                                double achieved_delta = 0.0;
+                                double completion_ratio = 0.0;
+                                if (selected_joint_valid)
+                                {
+                                    achieved_delta =
+                                        selected_error->actual_position - initial_position;
+                                    completion_ratio = achieved_delta / joint_delta;
+                                    RCLCPP_INFO(
+                                        node->get_logger(),
+                                        "%s 终点数据: initial=%.9f rad, "
+                                        "target=%.9f rad, actual=%.9f rad, "
+                                        "commanded_delta=%.9f rad (%.6f deg), "
+                                        "achieved_delta=%.9f rad (%.6f deg), "
+                                        "completion=%.2f%%, target_error=%.9f rad, "
+                                        "tolerance=%.9f rad",
+                                        joint_name.c_str(), initial_position,
+                                        selected_error->target_position,
+                                        selected_error->actual_position,
+                                        joint_delta,
+                                        joint_delta * kRadiansToDegrees,
+                                        achieved_delta,
+                                        achieved_delta * kRadiansToDegrees,
+                                        completion_ratio * 100.0,
+                                        selected_error->absolute_error,
+                                        endpoint_tolerance);
+                                }
+
+                                if (!endpoint.valid || !selected_joint_valid ||
                                     endpoint.max_absolute_error > endpoint_tolerance)
                                 {
                                     RCLCPP_ERROR(
                                         node->get_logger(),
-                                        "终点校验失败: valid=%s, max_error=%.9f rad",
+                                        "终点校验失败: valid=%s, selected_joint=%s, "
+                                        "max_error=%.9f rad, tolerance=%.9f rad, "
+                                        "message=%s",
                                         endpoint.valid ? "true" : "false",
-                                        endpoint.max_absolute_error);
+                                        selected_joint_valid ? "found" : "missing",
+                                        endpoint.max_absolute_error,
+                                        endpoint_tolerance,
+                                        endpoint.message.c_str());
                                     exit_code = 5;
                                 }
                                 else
                                 {
-                                    const auto selected_error = std::find_if(
-                                        endpoint.joint_errors.begin(),
-                                        endpoint.joint_errors.end(),
-                                        [&joint_name](const auto & joint_error)
-                                        {
-                                            return joint_error.joint_name == joint_name;
-                                        });
-                                    if (selected_error != endpoint.joint_errors.end())
-                                    {
-                                        const double achieved_delta =
-                                            selected_error->actual_position -
-                                            initial_position;
-                                        RCLCPP_INFO(
-                                            node->get_logger(),
-                                            "%s 执行数据: initial=%.9f rad, "
-                                            "target=%.9f rad, actual=%.9f rad, "
-                                            "achieved_delta=%.9f rad (%.6f deg), "
-                                            "target_error=%.9f rad",
-                                            joint_name.c_str(), initial_position,
-                                            selected_error->target_position,
-                                            selected_error->actual_position,
-                                            achieved_delta,
-                                            achieved_delta * kRadiansToDegrees,
-                                            selected_error->absolute_error);
-                                    }
                                     RCLCPP_INFO(
                                         node->get_logger(),
                                         "真机运动冒烟验证完成，最大终点误差 %.9f rad",

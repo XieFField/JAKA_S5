@@ -89,6 +89,6 @@ def generate_launch_description():
         DeclareLaunchArgument("planning_timeout", default_value="5.0"),
         DeclareLaunchArgument("execution_timeout_margin", default_value="10.0"),
         DeclareLaunchArgument("joint_state_timeout", default_value="3.0"),
-        DeclareLaunchArgument("endpoint_tolerance", default_value="0.01"),
+        DeclareLaunchArgument("endpoint_tolerance", default_value="0.002"),
         node,
     ])

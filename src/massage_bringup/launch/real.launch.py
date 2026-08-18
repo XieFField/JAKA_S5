@@ -23,26 +23,47 @@ def _validate_arguments(context):
             "robot_ip 必须显式提供，例如 robot_ip:=192.168.x.x"
         )
     try:
-        servo_step_num = int(
-            LaunchConfiguration("trajectory_servo_step_num").perform(context)
-        )
-        maximum_lateness = float(
-            LaunchConfiguration("trajectory_maximum_lateness").perform(context)
-        )
-        maximum_consecutive_overruns = int(
+        maximum_servo_step_num = int(
             LaunchConfiguration(
-                "trajectory_maximum_consecutive_overruns"
+                "trajectory_maximum_servo_step_num"
+            ).perform(context)
+        )
+        maximum_servo_samples = int(
+            LaunchConfiguration("maximum_servo_samples").perform(context)
+        )
+        servo_filter_cutoff = float(
+            LaunchConfiguration(
+                "trajectory_servo_filter_cutoff_hz"
+            ).perform(context)
+        )
+        maximum_queue_starvation = float(
+            LaunchConfiguration(
+                "trajectory_maximum_queue_starvation"
+            ).perform(context)
+        )
+        maximum_consecutive_starvations = int(
+            LaunchConfiguration(
+                "trajectory_maximum_consecutive_starvations"
             ).perform(context)
         )
     except ValueError as error:
         raise RuntimeError("JAKA servo 调度参数必须是数值") from error
-    if not 1 <= servo_step_num <= 50:
-        raise RuntimeError("trajectory_servo_step_num 必须在 [1, 50] 内")
-    if not math.isfinite(maximum_lateness) or maximum_lateness < 0.0:
-        raise RuntimeError("trajectory_maximum_lateness 不能为负数")
-    if maximum_consecutive_overruns < 0:
+    if not 1 <= maximum_servo_step_num <= 50:
         raise RuntimeError(
-            "trajectory_maximum_consecutive_overruns 不能为负数"
+            "trajectory_maximum_servo_step_num 必须在 [1, 50] 内"
+        )
+    if maximum_servo_samples <= 0:
+        raise RuntimeError("maximum_servo_samples 必须大于零")
+    if not math.isfinite(servo_filter_cutoff) or servo_filter_cutoff < 0.0:
+        raise RuntimeError("trajectory_servo_filter_cutoff_hz 不能为负数")
+    if (
+        not math.isfinite(maximum_queue_starvation)
+        or maximum_queue_starvation < 0.0
+    ):
+        raise RuntimeError("trajectory_maximum_queue_starvation 不能为负数")
+    if maximum_consecutive_starvations < 0:
+        raise RuntimeError(
+            "trajectory_maximum_consecutive_starvations 不能为负数"
         )
     auto_home = LaunchConfiguration("auto_home").perform(context).lower() == "true"
     if auto_home:
@@ -105,8 +126,9 @@ def generate_launch_description():
             "trajectory_goal_timeout": ParameterValue(
                 LaunchConfiguration("trajectory_goal_timeout"), value_type=float
             ),
-            "trajectory_servo_step_num": ParameterValue(
-                LaunchConfiguration("trajectory_servo_step_num"), value_type=int
+            "trajectory_maximum_servo_step_num": ParameterValue(
+                LaunchConfiguration("trajectory_maximum_servo_step_num"),
+                value_type=int,
             ),
             "maximum_servo_samples": ParameterValue(
                 LaunchConfiguration("maximum_servo_samples"), value_type=int
@@ -114,12 +136,18 @@ def generate_launch_description():
             "trajectory_feedback_period": ParameterValue(
                 LaunchConfiguration("trajectory_feedback_period"), value_type=float
             ),
-            "trajectory_maximum_lateness": ParameterValue(
-                LaunchConfiguration("trajectory_maximum_lateness"),
+            "trajectory_servo_filter_cutoff_hz": ParameterValue(
+                LaunchConfiguration("trajectory_servo_filter_cutoff_hz"),
                 value_type=float,
             ),
-            "trajectory_maximum_consecutive_overruns": ParameterValue(
-                LaunchConfiguration("trajectory_maximum_consecutive_overruns"),
+            "trajectory_maximum_queue_starvation": ParameterValue(
+                LaunchConfiguration("trajectory_maximum_queue_starvation"),
+                value_type=float,
+            ),
+            "trajectory_maximum_consecutive_starvations": ParameterValue(
+                LaunchConfiguration(
+                    "trajectory_maximum_consecutive_starvations"
+                ),
                 value_type=int,
             ),
         }],
@@ -182,16 +210,21 @@ def generate_launch_description():
         DeclareLaunchArgument("home_maximum_joint_travel", default_value="3.5"),
         DeclareLaunchArgument("ft_frame_id", default_value="Link_06"),
         DeclareLaunchArgument("ft_data_type", default_value="3"),
-        DeclareLaunchArgument("trajectory_goal_tolerance", default_value="0.01"),
+        DeclareLaunchArgument("trajectory_goal_tolerance", default_value="0.002"),
         DeclareLaunchArgument("trajectory_goal_timeout", default_value="2.0"),
-        DeclareLaunchArgument("trajectory_servo_step_num", default_value="4"),
+        DeclareLaunchArgument(
+            "trajectory_maximum_servo_step_num", default_value="50"
+        ),
         DeclareLaunchArgument("maximum_servo_samples", default_value="50000"),
         DeclareLaunchArgument("trajectory_feedback_period", default_value="0.1"),
         DeclareLaunchArgument(
-            "trajectory_maximum_lateness", default_value="0.008"
+            "trajectory_servo_filter_cutoff_hz", default_value="0.5"
         ),
         DeclareLaunchArgument(
-            "trajectory_maximum_consecutive_overruns", default_value="1"
+            "trajectory_maximum_queue_starvation", default_value="0.008"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_maximum_consecutive_starvations", default_value="1"
         ),
         OpaqueFunction(function=_validate_arguments),
         LogInfo(

@@ -86,7 +86,7 @@ def generate_launch_description():
             DeclareLaunchArgument("readiness_timeout", default_value="60.0"),
             DeclareLaunchArgument("feedback_timeout", default_value="1.0"),
             DeclareLaunchArgument("maximum_joint_travel", default_value="3.5"),
-            DeclareLaunchArgument("endpoint_tolerance", default_value="0.01"),
+            DeclareLaunchArgument("endpoint_tolerance", default_value="0.002"),
             node,
         ]
     )

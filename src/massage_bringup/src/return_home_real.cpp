@@ -68,7 +68,7 @@ int main(int argc, char ** argv)
   double readiness_timeout = 60.0;
   double feedback_timeout = 1.0;
   double maximum_joint_travel = 3.5;
-  double endpoint_tolerance = 0.01;
+  double endpoint_tolerance = 0.002;
   node->get_parameter_or("execute", execute, false);
   node->get_parameter_or("parameters_confirmed", parameters_confirmed, false);
   node->get_parameter_or("planning_attempts", planning_attempts, 3);
@@ -81,7 +81,7 @@ int main(int argc, char ** argv)
   node->get_parameter_or("readiness_timeout", readiness_timeout, 60.0);
   node->get_parameter_or("feedback_timeout", feedback_timeout, 1.0);
   node->get_parameter_or("maximum_joint_travel", maximum_joint_travel, 3.5);
-  node->get_parameter_or("endpoint_tolerance", endpoint_tolerance, 0.01);
+  node->get_parameter_or("endpoint_tolerance", endpoint_tolerance, 0.002);
 
   if (execute && !parameters_confirmed)
   {
