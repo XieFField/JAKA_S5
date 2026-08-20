@@ -60,6 +60,19 @@ ament_target_dependencies(real_motion_smoke_demo
   sensor_msgs
 )
 
+add_executable(
+  real_motion_repeatability_demo
+  demo/real_motion_repeatability_demo.cpp
+)
+target_compile_features(real_motion_repeatability_demo PUBLIC cxx_std_17)
+target_link_libraries(real_motion_repeatability_demo ${PROJECT_NAME})
+ament_target_dependencies(real_motion_repeatability_demo
+  jaka_msgs
+  massage_motion
+  rclcpp
+  sensor_msgs
+)
+
 add_executable(real_compliance_smoke_demo demo/real_compliance_smoke_demo.cpp)
 target_compile_features(real_compliance_smoke_demo PUBLIC cxx_std_17)
 target_link_libraries(real_compliance_smoke_demo ${PROJECT_NAME})
@@ -114,6 +127,7 @@ install(
     real_action_protocol_demo
     real_compliance_smoke_demo
     real_ft_observation_demo
+    real_motion_repeatability_demo
     real_motion_smoke_demo
     real_tool_drive_smoke_demo
   DESTINATION lib/${PROJECT_NAME}

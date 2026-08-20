@@ -125,7 +125,7 @@ ExecutionTimingResult calculate_execution_timing(
   std::ostringstream stream;
   stream << "轨迹预期时长=" << result.expected_duration
          << " s, 超时余量=" << policy.margin
-         << " s, 最终执行超时=" << result.timeout << " s";
+         << " s, 执行超时判定上限=" << result.timeout << " s";
   if (result.used_override)
   {
     stream << " (使用显式覆盖值)";

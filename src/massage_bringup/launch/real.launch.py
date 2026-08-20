@@ -31,6 +31,15 @@ def _validate_arguments(context):
         maximum_servo_samples = int(
             LaunchConfiguration("maximum_servo_samples").perform(context)
         )
+        trajectory_goal_tolerance = float(
+            LaunchConfiguration("trajectory_goal_tolerance").perform(context)
+        )
+        trajectory_goal_timeout = float(
+            LaunchConfiguration("trajectory_goal_timeout").perform(context)
+        )
+        trajectory_feedback_period = float(
+            LaunchConfiguration("trajectory_feedback_period").perform(context)
+        )
         servo_filter_cutoff = float(
             LaunchConfiguration(
                 "trajectory_servo_filter_cutoff_hz"
@@ -54,6 +63,21 @@ def _validate_arguments(context):
         )
     if maximum_servo_samples <= 0:
         raise RuntimeError("maximum_servo_samples 必须大于零")
+    if (
+        not math.isfinite(trajectory_goal_tolerance)
+        or trajectory_goal_tolerance <= 0.0
+    ):
+        raise RuntimeError("trajectory_goal_tolerance 必须为有限正数")
+    if (
+        not math.isfinite(trajectory_goal_timeout)
+        or trajectory_goal_timeout <= 0.0
+    ):
+        raise RuntimeError("trajectory_goal_timeout 必须为有限正数")
+    if (
+        not math.isfinite(trajectory_feedback_period)
+        or trajectory_feedback_period <= 0.0
+    ):
+        raise RuntimeError("trajectory_feedback_period 必须为有限正数")
     if not math.isfinite(servo_filter_cutoff) or servo_filter_cutoff < 0.0:
         raise RuntimeError("trajectory_servo_filter_cutoff_hz 不能为负数")
     if (
@@ -80,6 +104,96 @@ def _validate_arguments(context):
             raise RuntimeError(
                 "auto_home:=true 要求 connect:=true、start_move_group:=true "
                 "和 auto_home_confirmed:=true"
+            )
+        try:
+            home_planning_attempts = int(
+                LaunchConfiguration("home_planning_attempts").perform(context)
+            )
+            home_velocity_scale = float(
+                LaunchConfiguration("home_velocity_scale").perform(context)
+            )
+            home_acceleration_scale = float(
+                LaunchConfiguration("home_acceleration_scale").perform(context)
+            )
+            home_planning_timeout = float(
+                LaunchConfiguration("home_planning_timeout").perform(context)
+            )
+            home_execution_timeout_margin = float(
+                LaunchConfiguration(
+                    "home_execution_timeout_margin"
+                ).perform(context)
+            )
+            home_state_timeout = float(
+                LaunchConfiguration("home_state_timeout").perform(context)
+            )
+            home_readiness_timeout = float(
+                LaunchConfiguration("home_readiness_timeout").perform(context)
+            )
+            home_feedback_timeout = float(
+                LaunchConfiguration("home_feedback_timeout").perform(context)
+            )
+            home_maximum_joint_travel = float(
+                LaunchConfiguration(
+                    "home_maximum_joint_travel"
+                ).perform(context)
+            )
+            home_endpoint_tolerance = float(
+                LaunchConfiguration("home_endpoint_tolerance").perform(context)
+            )
+        except ValueError as error:
+            raise RuntimeError("自动回待机参数必须是数值") from error
+
+        if not 1 <= home_planning_attempts <= 10:
+            raise RuntimeError("home_planning_attempts 必须在 [1, 10] 内")
+        if (
+            not math.isfinite(home_velocity_scale)
+            or not 0.0 < home_velocity_scale <= 1.0
+        ):
+            raise RuntimeError("home_velocity_scale 必须在 (0, 1] 内")
+        if (
+            not math.isfinite(home_acceleration_scale)
+            or not 0.0 < home_acceleration_scale <= 1.0
+        ):
+            raise RuntimeError("home_acceleration_scale 必须在 (0, 1] 内")
+        if (
+            not math.isfinite(home_planning_timeout)
+            or home_planning_timeout <= 0.0
+        ):
+            raise RuntimeError("home_planning_timeout 必须为有限正数")
+        if (
+            not math.isfinite(home_execution_timeout_margin)
+            or home_execution_timeout_margin < 0.0
+        ):
+            raise RuntimeError("home_execution_timeout_margin 不能为负数")
+        for name, value in (
+            ("home_state_timeout", home_state_timeout),
+            ("home_readiness_timeout", home_readiness_timeout),
+            ("home_feedback_timeout", home_feedback_timeout),
+        ):
+            if not math.isfinite(value) or value <= 0.0:
+                raise RuntimeError(f"{name} 必须为有限正数")
+        if (
+            not math.isfinite(home_maximum_joint_travel)
+            or home_maximum_joint_travel <= 0.0
+        ):
+            raise RuntimeError("home_maximum_joint_travel 必须为有限正数")
+        if (
+            not math.isfinite(home_endpoint_tolerance)
+            or home_endpoint_tolerance <= 0.0
+            or home_endpoint_tolerance >= home_maximum_joint_travel
+        ):
+            raise RuntimeError(
+                "home_endpoint_tolerance 必须为正数且小于最大关节行程"
+            )
+        if trajectory_goal_tolerance > home_endpoint_tolerance:
+            raise RuntimeError(
+                "trajectory_goal_tolerance 不能大于 "
+                "home_endpoint_tolerance"
+            )
+        if trajectory_goal_timeout < home_execution_timeout_margin:
+            raise RuntimeError(
+                "trajectory_goal_timeout 不能小于 "
+                "home_execution_timeout_margin，避免驱动内层提前中止"
             )
     return []
 
@@ -184,11 +298,24 @@ def generate_launch_description():
             "execute": "true",
             "parameters_confirmed": LaunchConfiguration("auto_home_confirmed"),
             "planning_attempts": LaunchConfiguration("home_planning_attempts"),
+            "velocity_scale": LaunchConfiguration("home_velocity_scale"),
+            "acceleration_scale": LaunchConfiguration(
+                "home_acceleration_scale"
+            ),
+            "planning_timeout": LaunchConfiguration("home_planning_timeout"),
+            "execution_timeout_margin": LaunchConfiguration(
+                "home_execution_timeout_margin"
+            ),
             "state_timeout": LaunchConfiguration("home_state_timeout"),
             "readiness_timeout": LaunchConfiguration("home_readiness_timeout"),
+            "feedback_timeout": LaunchConfiguration("home_feedback_timeout"),
             "maximum_joint_travel": LaunchConfiguration(
                 "home_maximum_joint_travel"
             ),
+            "endpoint_tolerance": LaunchConfiguration(
+                "home_endpoint_tolerance"
+            ),
+            "output_csv": LaunchConfiguration("home_output_csv"),
         }.items(),
         condition=IfCondition(auto_home),
     )
@@ -205,13 +332,22 @@ def generate_launch_description():
         DeclareLaunchArgument("auto_home", default_value="false"),
         DeclareLaunchArgument("auto_home_confirmed", default_value="false"),
         DeclareLaunchArgument("home_planning_attempts", default_value="3"),
+        DeclareLaunchArgument("home_velocity_scale", default_value="0.02"),
+        DeclareLaunchArgument("home_acceleration_scale", default_value="0.02"),
+        DeclareLaunchArgument("home_planning_timeout", default_value="5.0"),
+        DeclareLaunchArgument(
+            "home_execution_timeout_margin", default_value="15.0"
+        ),
         DeclareLaunchArgument("home_state_timeout", default_value="30.0"),
         DeclareLaunchArgument("home_readiness_timeout", default_value="60.0"),
-        DeclareLaunchArgument("home_maximum_joint_travel", default_value="3.5"),
+        DeclareLaunchArgument("home_feedback_timeout", default_value="1.0"),
+        DeclareLaunchArgument("home_maximum_joint_travel", default_value="0.55"),
+        DeclareLaunchArgument("home_endpoint_tolerance", default_value="0.002"),
+        DeclareLaunchArgument("home_output_csv", default_value=""),
         DeclareLaunchArgument("ft_frame_id", default_value="Link_06"),
         DeclareLaunchArgument("ft_data_type", default_value="3"),
         DeclareLaunchArgument("trajectory_goal_tolerance", default_value="0.002"),
-        DeclareLaunchArgument("trajectory_goal_timeout", default_value="2.0"),
+        DeclareLaunchArgument("trajectory_goal_timeout", default_value="15.0"),
         DeclareLaunchArgument(
             "trajectory_maximum_servo_step_num", default_value="50"
         ),

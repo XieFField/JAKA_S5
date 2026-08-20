@@ -6,6 +6,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "massage_motion/execution_timing.hpp"
 #include "massage_motion/relative_joint_target.hpp"
 #include "massage_motion/trajectory_endpoint_error.hpp"
+#include "massage_motion/trajectory_execution_contract.hpp"
 
 namespace
 {
@@ -160,6 +162,56 @@ int main(int argc, char ** argv)
                     "target=%.9f rad, commanded_delta=%.9f rad (%.6f deg)",
                     joint_name.c_str(), initial_position, target_position,
                     joint_delta, joint_delta * kRadiansToDegrees);
+
+                if (execute)
+                {
+                    auto parameter_node = std::make_shared<rclcpp::Node>(
+                        "motion_smoke_driver_parameter_client");
+                    auto parameter_client =
+                        std::make_shared<rclcpp::SyncParametersClient>(
+                        parameter_node, "/jaka_driver");
+                    if (!parameter_client->wait_for_service(
+                            std::chrono::duration<double>(joint_state_timeout)))
+                    {
+                        throw std::runtime_error(
+                            "等待 /jaka_driver 参数服务超时");
+                    }
+                    const auto driver_parameters =
+                        parameter_client->get_parameters({
+                            "trajectory_goal_tolerance",
+                            "trajectory_goal_timeout"});
+                    if (driver_parameters.size() != 2U)
+                    {
+                        throw std::runtime_error("驱动终点参数读取不完整");
+                    }
+                    const double driver_goal_tolerance =
+                        driver_parameters[0].as_double();
+                    const double driver_goal_timeout =
+                        driver_parameters[1].as_double();
+                    const auto execution_contract =
+                        massage_motion::validate_trajectory_execution_contract(
+                        driver_goal_tolerance, driver_goal_timeout,
+                        endpoint_tolerance, execution_timeout_margin);
+                    if (!execution_contract.valid)
+                    {
+                        std::ostringstream message;
+                        message << "驱动终点参数与真机冒烟执行门槛不一致: "
+                                << execution_contract.message
+                                << "; tolerance=" << driver_goal_tolerance
+                                << " rad, endpoint_tolerance="
+                                << endpoint_tolerance << " rad, driver_margin="
+                                << driver_goal_timeout
+                                << " s, execution_margin="
+                                << execution_timeout_margin << " s";
+                        throw std::runtime_error(message.str());
+                    }
+                    RCLCPP_INFO(
+                        node->get_logger(),
+                        "驱动终点参数读回通过: tolerance=%.9f rad, "
+                        "driver_margin=%.3f s, execution_margin=%.3f s",
+                        driver_goal_tolerance, driver_goal_timeout,
+                        execution_timeout_margin);
+                }
 
                 massage_motion::PlannerConfig planner_config;
                 planner_config.planning_group = "jaka_s5";

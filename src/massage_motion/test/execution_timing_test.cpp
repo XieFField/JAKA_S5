@@ -35,6 +35,7 @@ TEST(ExecutionTimingTest, UsesJointTrajectoryFinalDurationAndMargin)
   EXPECT_NEAR(result.expected_duration, 79.684, 1e-6);
   EXPECT_NEAR(result.timeout, 94.684, 1e-6);
   EXPECT_FALSE(result.used_override);
+  EXPECT_NE(result.message.find("执行超时判定上限=94.684"), std::string::npos);
 }
 
 TEST(ExecutionTimingTest, UsesLargestFinalDurationAcrossTrajectoryTypes)

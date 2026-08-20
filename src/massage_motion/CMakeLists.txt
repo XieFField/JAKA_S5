@@ -30,10 +30,14 @@ add_library(${PROJECT_NAME}
   src/execution_types.cpp
   src/execution_validation.cpp
   src/execution_timing.cpp
+  src/trajectory_execution_contract.cpp
   src/moveit_trajectory_executor.cpp
   src/guarded_trajectory_executor.cpp
+  src/joint_target_interpolation.cpp
   src/trajectory_endpoint_error.cpp
   src/relative_joint_target.cpp
+  src/motion_repeatability.cpp
+  src/technique_path_generator.cpp
   src/single_axis_admittance.cpp
   src/wrench_observation.cpp
   src/wrench_processor.cpp
@@ -138,6 +142,14 @@ if(BUILD_TESTING)
     ${PROJECT_NAME}
   )
 
+  ament_add_gtest(trajectory_execution_contract_test
+    test/trajectory_execution_contract_test.cpp
+  )
+
+  target_link_libraries(trajectory_execution_contract_test
+    ${PROJECT_NAME}
+  )
+
   ament_add_gtest(trajectory_endpoint_error_test
     test/trajectory_endpoint_error_test.cpp
   )
@@ -191,6 +203,30 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(relative_joint_target_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(motion_repeatability_test
+    test/motion_repeatability_test.cpp
+  )
+
+  target_link_libraries(motion_repeatability_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(joint_target_interpolation_test
+    test/joint_target_interpolation_test.cpp
+  )
+
+  target_link_libraries(joint_target_interpolation_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(technique_path_generator_test
+    test/technique_path_generator_test.cpp
+  )
+
+  target_link_libraries(technique_path_generator_test
     ${PROJECT_NAME}
   )
 

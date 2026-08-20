@@ -18,17 +18,28 @@ struct JointPositionError
     double absolute_error{0.0};
 };
 
-struct TrajectoryEndpointErrorResult
+struct JointTargetErrorResult
 {
-    bool valid{false};
-    std::string message;
-    std::vector<JointPositionError> joint_errors;
-    double max_absolute_error{0.0};
+  bool valid{false};
+  std::string message;
+  std::vector<JointPositionError> joint_errors;
+  double max_absolute_error{0.0};
 };
 
+using TrajectoryEndpointErrorResult = JointTargetErrorResult;
+
+JointTargetErrorResult calculate_joint_target_error(
+  const std::vector<std::string> & target_joint_names,
+  const std::vector<double> & target_positions,
+  const sensor_msgs::msg::JointState & actual_state);
+
+bool joint_target_reached(
+  const JointTargetErrorResult & result,
+  double tolerance);
+
 TrajectoryEndpointErrorResult calculate_trajectory_endpoint_error(
-    const moveit_msgs::msg::RobotTrajectory & trajectory,
-    const sensor_msgs::msg::JointState & actual_state);
+  const moveit_msgs::msg::RobotTrajectory & trajectory,
+  const sensor_msgs::msg::JointState & actual_state);
 
 }  // namespace massage_motion
 

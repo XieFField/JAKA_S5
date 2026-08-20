@@ -33,8 +33,37 @@ ament_target_dependencies(return_home_real
   sensor_msgs
 )
 
+add_executable(
+  home_segment_planning_real
+  src/home_segment_planning_real.cpp
+)
+target_compile_features(home_segment_planning_real PUBLIC cxx_std_17)
+target_include_directories(home_segment_planning_real PRIVATE include)
+ament_target_dependencies(home_segment_planning_real
+  massage_motion
+  rclcpp
+  sensor_msgs
+)
+
+add_executable(
+  home_segment_round_trip_real
+  src/home_segment_round_trip_real.cpp
+)
+target_compile_features(home_segment_round_trip_real PUBLIC cxx_std_17)
+target_include_directories(home_segment_round_trip_real PRIVATE include)
+ament_target_dependencies(home_segment_round_trip_real
+  jaka_msgs
+  massage_motion
+  rclcpp
+  sensor_msgs
+)
+
 install(
-  TARGETS return_home_sim return_home_real
+  TARGETS
+    home_segment_planning_real
+    home_segment_round_trip_real
+    return_home_sim
+    return_home_real
   DESTINATION lib/${PROJECT_NAME}
 )
 

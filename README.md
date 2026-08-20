@@ -29,8 +29,20 @@ robot_project/
 
 ```text
 branch: feature/massage-s5-integration
-commit: 13c05ce60e2ea57051d5fd1be4c14850a2c68ee9
+commit: b3a315dbf19508f6b881cb3a986d26b555dbbeb8
 ```
+
+## 当前进度
+
+- 真机 `FollowJointTrajectory`、Servo 队列、正反向重复性、中距离往返、完整回待机和自动回待机
+  门禁已经通过；轨迹终点收敛余量统一为计划结束后的 `15 s` 最小余量。
+- 真机 FT 被动观测和独立导纳冒烟已经完成；导纳与外部名义轨迹的复合控制能力尚未确认，禁止在
+  导纳状态下混用未经验证的 `servo_p/servo_j`。
+- 与后端无关的 `TechniquePathGenerator` 已完成第一项“推”法 XY 直线路径及离线测试。
+- 当前开发顺序是补齐“按”法和“揉”法几何，再接入 Gazebo 自由空间执行；人体接触不属于当前阶段。
+
+详细状态与后续边界见
+[中距离运动门禁与推按揉轨迹基础](docs/next_stage_motion_and_technique_plan_2026-08-18.md)。
 
 ## 软件环境
 
@@ -252,9 +264,79 @@ ros2 launch massage_bringup real_motion_smoke_demo.launch.py \
 收紧驱动终点容差为 `0.002 rad` 后，真机已完成一次 `joint_1 +0.01 rad` 小位移闭环：
 15 个 Servo 分段在 `0.141695 s` 内连续入队，队列饥饿为零；最终实际位移
 `0.008140218 rad`、终点误差 `0.001859782 rad`，Action、MoveIt 和 demo 均返回成功。
-该结果接近容差边界，只证明本次小位移链路通过；重复精度、反向运动和长轨迹仍需继续验证。
+该结果接近容差边界，因此不能单独证明重复精度、反向运动和长轨迹；这些项目已由后续重复性、
+中距离往返和完整回待机测试分别完成验证。
 完整记录见
 [JAKA Servo 队列真机小位移测试报告](docs/jaka_servo_queue_real_test_report_2026-08-18.md)。
+
+正反向重复性批次使用固定基准和固定正向目标，默认只规划首个目标。显式执行后按
+`positive -> negative` 完成三轮，任一失败立即停止，并将每程结果写入
+`/tmp/massage_motion_repeatability_<timestamp>.csv`：
+
+```bash
+ros2 launch massage_bringup real_motion_repeatability_demo.launch.py \
+  execute:=true parameters_confirmed:=true \
+  joint_name:=joint_1 cycles:=3 joint_delta:=0.01 \
+  maximum_joint_delta:=0.02 endpoint_tolerance:=0.002 \
+  minimum_completion_ratio:=0.90 maximum_position_range:=0.001 \
+  velocity_scale:=0.02 acceleration_scale:=0.02
+```
+
+重复性批测要求运行中的驱动终点容差与完成度门槛一致。对于
+`joint_delta:=0.01`、`minimum_completion_ratio:=0.90`，启动唯一一套真机栈时使用：
+
+```bash
+ros2 launch massage_bringup real.launch.py \
+  robot_ip:=192.168.66.200 connect:=true start_move_group:=true \
+  use_rviz:=false auto_home:=false \
+  trajectory_goal_tolerance:=0.0008 trajectory_goal_timeout:=15.0
+```
+
+批测节点会读取 `/jaka_driver` 的实际参数；容差过宽时会在发送第一个
+Action Goal 前拒绝执行，不依赖人工核对。
+
+批次要求六程全部通过、每程完成率至少 90%，且同方向三次最终位置极差不超过
+`0.001 rad`。这组门禁比驱动的单程 Action 成功条件更严格。
+2026-08-18 真机六程已通过，详细数据见
+[JAKA 小位移正反向重复性真机测试报告](docs/jaka_motion_repeatability_real_test_report_2026-08-18.md)。
+
+中距离门禁首先只生成当前位置到业务待机位姿 `25%` 处的固定绝对目标，并进行三次竞争规划。
+该入口没有 `execute` 参数，也不创建轨迹执行器：
+
+```bash
+ros2 launch massage_bringup home_segment_planning_real.launch.py \
+  segment_ratio:=0.25 planning_attempts:=3 \
+  maximum_joint_travel:=0.15 \
+  velocity_scale:=0.02 acceleration_scale:=0.02
+```
+
+它要求唯一 MoveIt 栈和 `/joint_states` 已就绪。通过日志必须包含六轴起点/待机/分段目标、
+三个候选评分以及 `HOME SEGMENT PLAN-ONLY: PASS`，不会发送运动命令。
+
+分段只规划通过后，使用独立入口执行一次固定目标往返。节点启动时保存六轴基准，去程目标为
+`q_start + ratio * (q_home - q_start)`，返程目标始终是保存的 `q_start`，不会累计相对位移：
+
+```bash
+ros2 launch massage_bringup home_segment_round_trip_real.launch.py \
+  execute:=true parameters_confirmed:=true \
+  segment_ratio:=0.25 planning_attempts:=3 \
+  maximum_joint_travel:=0.15 \
+  endpoint_tolerance:=0.002 \
+  velocity_scale:=0.02 acceleration_scale:=0.02 \
+  execution_timeout_margin:=10.0
+```
+
+该入口必须在唯一真机栈以 `allow_trajectory_execution:=true` 启动后使用。执行前会读取驱动
+`trajectory_goal_tolerance` 和 `trajectory_goal_timeout`，并检查新鲜关节反馈、机器人状态、规划
+起点以及每段最大关节行程。每程分别进行三次竞争规划并使用轨迹预期时长加余量计算超时；去程
+失败会禁止返程。两程逐轴终点数据和候选指标写入
+`/tmp/massage_home_segment_round_trip_<timestamp>.csv`，只有最后出现
+`HOME SEGMENT ROUND-TRIP: PASS` 才表示通过。
+
+2026-08-19 已依次完成 `ratio=0.25`、`ratio=0.50` 往返和完整回待机。五段轨迹均无队列饥饿，
+完整回待机最大单关节行程为 `0.484582 rad`、最大终点误差为 `0.001832293 rad`。结果与结构化
+数据见 [JAKA 25% 分段往返真机测试报告](docs/jaka_home_segment_round_trip_real_test_report_2026-08-19.md)
+和 [JAKA 中距离与完整回待机真机测试报告](docs/jaka_home_motion_gate_real_test_report_2026-08-19.md)。
 
 不改变目标关节位置的 Action 协议验证用于检查 feedback、并发 Goal 拒绝、取消和取消后恢复。
 默认只检查 `/joint_states` 与 Action 是否存在；显式启用后，节点将当前六轴位置作为目标，
@@ -342,7 +424,7 @@ ros2 launch massage_bringup return_home_real.launch.py \
   execute:=true parameters_confirmed:=true \
   velocity_scale:=0.02 acceleration_scale:=0.02 \
   execution_timeout_margin:=15.0 \
-  maximum_joint_travel:=3.5 endpoint_tolerance:=0.002
+  maximum_joint_travel:=0.55 endpoint_tolerance:=0.002
 ```
 
 `execution_timeout_margin` 不是绝对执行时限。节点从竞争规划器选中的轨迹读取最终
@@ -368,11 +450,17 @@ ros2 launch massage_bringup real.launch.py \
 
 `trajectory_maximum_servo_step_num` 是单次控制柜插补步数上限，不是主机发送周期。
 `trajectory_servo_filter_cutoff_hz=0` 表示显式关闭 Servo 滤波；默认 `0.5` 与官方
-MoveIt 示例一致。队列实现已经通过一次 `0.01 rad` 真机小位移验证，但不能据此直接判定
-长轨迹已经可用。
+MoveIt 示例一致。队列实现已经通过小位移、正反向重复性、中距离往返和完整回待机真机验证；
+这些结果只覆盖自由空间轨迹执行，不覆盖接触状态下的力位复合控制。
 
-该 launch 只启动回零 demo，不会重复启动驱动或 MoveIt。本功能当前只完成代码与离线验证，首次
-仿真执行和真机执行应分别保留运行验收记录。
+该 launch 只启动回零 demo，不会重复启动驱动或 MoveIt。2026-08-19 已依次通过 25%、50%
+分段往返和完整回待机；完整轨迹最大单关节行程 `0.484582 rad`、最大终点误差
+`0.001832293 rad`，172 个轨迹点对应的 171 个 Servo 队列段无饥饿。
+
+执行模式会在创建规划器之前按关节名称比较当前反馈与业务待机常量。最大误差不超过
+`endpoint_tolerance` 时输出 `AUTO HOME ALREADY-AT-TARGET: PASS`，不创建 MoveIt 规划器、
+不发送轨迹 Goal；否则进入竞争规划和受保护执行。两条成功路径均输出逐轴误差、机器人状态和
+`/tmp/massage_auto_home_<timestamp>.csv`。
 
 基础 `real.launch.py` 仍默认不运动。需要在机器人进入上电、使能且静止状态后自动执行回待机任务时，
 使用：
@@ -380,10 +468,15 @@ MoveIt 示例一致。队列实现已经通过一次 `0.01 rad` 真机小位移�
 ```bash
 ros2 launch massage_bringup real.launch.py \
   robot_ip:=192.168.66.200 connect:=true start_move_group:=true \
-  auto_home:=true auto_home_confirmed:=true
+  auto_home:=true auto_home_confirmed:=true \
+  trajectory_goal_timeout:=15.0
 ```
 
-回待机节点会等待机器人进入可执行状态，再运行竞争规划和既有任务状态机；它不会代替登录、上电或使能。
+主 launch 的自动回待机默认最大单关节行程为已经验证的 `0.55 rad`，并在启动任何节点前校验
+速度、加速度、规划时限、动态超时余量、反馈时限、最大行程和终点容差。驱动
+`trajectory_goal_timeout` 表示控制柜计划结束后的终点收敛余量，不是固定的总执行时长；自动回待机
+要求该余量不小于 `home_execution_timeout_margin`，独立回待机节点也会在规划前读回并校验。回待机节点会等待机器人
+进入可执行状态；它不会代替登录、上电或使能。`auto_home` 仍默认关闭。
 
 结束时按以下顺序关闭：
 
@@ -406,7 +499,7 @@ cd ~/robot_project
 git clone <YOUR_JAKA_FORK_URL> jaka_ros2
 cd jaka_ros2
 git checkout feature/massage-s5-integration
-git checkout 13c05ce60e2ea57051d5fd1be4c14850a2c68ee9
+git checkout b3a315dbf19508f6b881cb3a986d26b555dbbeb8
 
 cd ~/robot_project
 git clone <YOUR_MASSAGE_REPOSITORY_URL> massage_robot_ws
@@ -439,6 +532,8 @@ git checkout <MASSAGE_PROJECT_COMMIT_OR_TAG>
 
 - [项目总体架构与进度](docs/project_outline.md)
 - [当前阶段：程序化柔顺按压与基础业务动作](docs/current_stage_programmatic_compliance.md)
+- [中距离运动门禁与推按揉轨迹基础](docs/next_stage_motion_and_technique_plan_2026-08-18.md)
+- [JAKA 中距离与完整回待机真机测试报告](docs/jaka_home_motion_gate_real_test_report_2026-08-19.md)
 - [推拿手法与视觉反馈方案](docs/massage_technique_vision_plan.md)
 - [JAKA S5 首次运动前上机验证 Runbook](docs/jaka_pre_motion_runbook.md)
 - [JAKA 真机联调检查表](docs/jaka_real_hardware_integration.md)
