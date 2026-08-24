@@ -17,6 +17,9 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     use_massage_head = LaunchConfiguration("use_massage_head")
+    initial_positions_file = LaunchConfiguration("initial_positions_file")
+    world_file = LaunchConfiguration("world_file")
+    gazebo_extra_args = LaunchConfiguration("gazebo_extra_args")
 
     description_share = get_package_share_directory("massage_description")
     robot_xacro = os.path.join(
@@ -24,12 +27,6 @@ def generate_launch_description():
         "urdf",
         "jaka_s5_massage.urdf.xacro",
     )
-    world_path = os.path.join(
-        description_share,
-        "worlds",
-        "ft_contact_test.sdf",
-    )
-
     robot_description = ParameterValue(
         Command([
             "xacro ",
@@ -38,6 +35,8 @@ def generate_launch_description():
             " use_rviz_sim:=false",
             " use_massage_head:=",
             use_massage_head,
+            " initial_positions_file:=",
+            initial_positions_file,
         ]),
         value_type=str,
     )
@@ -51,7 +50,7 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "gz_args": world_path + " -r",
+            "gz_args": [world_file, " -r ", gazebo_extra_args],
         }.items(),
     )
 
@@ -139,6 +138,29 @@ def generate_launch_description():
             description=(
                 "Enable the exercise massage head and force-torque sensor"
             ),
+        ),
+        DeclareLaunchArgument(
+            "initial_positions_file",
+            default_value=os.path.join(
+                get_package_share_directory("jaka_s5_moveit_config"),
+                "config",
+                "initial_positions.yaml",
+            ),
+            description="Joint positions used when Gazebo creates the robot",
+        ),
+        DeclareLaunchArgument(
+            "world_file",
+            default_value=os.path.join(
+                description_share,
+                "worlds",
+                "ft_contact_test.sdf",
+            ),
+            description="Gazebo world file; FT contact demo keeps its contact pad",
+        ),
+        DeclareLaunchArgument(
+            "gazebo_extra_args",
+            default_value="",
+            description="Additional Ignition Gazebo arguments, such as -s",
         ),
         gazebo,
         robot_state_publisher,

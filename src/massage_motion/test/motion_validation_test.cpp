@@ -81,4 +81,49 @@ TEST(MotionValidationTest, RejectsLinTargetWithoutFrameId)
     EXPECT_EQ(result.error, MotionError::kInvalidRequest);
 }
 
+TEST(MotionValidationTest, AcceptsAlignedFiniteStartState)
+{
+    MotionRequest request;
+    request.motion_type = MotionType::kLin;
+    PoseTarget target;
+    target.pose.header.frame_id = "world";
+    target.pose.pose.orientation.w = 1.0;
+    request.target = target;
+    moveit_msgs::msg::RobotState start_state;
+    start_state.joint_state.name = {"joint_1", "joint_2"};
+    start_state.joint_state.position = {0.1, -0.2};
+    request.start_state = start_state;
+
+    const ValidationResult result = validate_motion_request(request);
+
+    EXPECT_TRUE(result.valid) << result.message;
+}
+
+TEST(MotionValidationTest, RejectsMalformedStartStates)
+{
+    MotionRequest request;
+    request.motion_type = MotionType::kLin;
+    PoseTarget target;
+    target.pose.header.frame_id = "world";
+    target.pose.pose.orientation.w = 1.0;
+    request.target = target;
+
+    moveit_msgs::msg::RobotState start_state;
+    start_state.joint_state.name = {"joint_1", "joint_2"};
+    start_state.joint_state.position = {0.1};
+    request.start_state = start_state;
+    EXPECT_FALSE(validate_motion_request(request).valid);
+
+    start_state.joint_state.position = {0.1, 0.2};
+    start_state.joint_state.name = {"joint_1", "joint_1"};
+    request.start_state = start_state;
+    EXPECT_FALSE(validate_motion_request(request).valid);
+
+    start_state.joint_state.name = {"joint_1", "joint_2"};
+    start_state.joint_state.position[1] =
+        std::numeric_limits<double>::quiet_NaN();
+    request.start_state = start_state;
+    EXPECT_FALSE(validate_motion_request(request).valid);
+}
+
 }

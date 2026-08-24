@@ -38,11 +38,10 @@ commit: b3a315dbf19508f6b881cb3a986d26b555dbbeb8
   门禁已经通过；轨迹终点收敛余量统一为计划结束后的 `15 s` 最小余量。
 - 真机 FT 被动观测和独立导纳冒烟已经完成；导纳与外部名义轨迹的复合控制能力尚未确认，禁止在
   导纳状态下混用未经验证的 `servo_p/servo_j`。
-- 与后端无关的 `TechniquePathGenerator` 已完成第一项“推”法 XY 直线路径及离线测试。
-- 当前开发顺序是补齐“按”法和“揉”法几何，再接入 Gazebo 自由空间执行；人体接触不属于当前阶段。
-
-详细状态与后续边界见
-[中距离运动门禁与推按揉轨迹基础](docs/next_stage_motion_and_technique_plan_2026-08-18.md)。
+- “推”法自由空间轨迹已经形成从姿态调节、动态 IK 多解搜索、PTP 候选竞争、连杆高度与肘部
+  构型诊断，到连续 PTP/LIN 规划和 Gazebo 执行验收的完整链路。
+- 真机推法入口当前强制为 plan-only，仅验证当前关节状态到自由空间起点以及后续直线路径；接触
+  搜索、恒力与切向运动复合控制仍未实现，“按”和“揉”的业务轨迹尚未进入集成阶段。
 
 ## 软件环境
 
@@ -102,7 +101,6 @@ colcon test-result --verbose
 
 ```text
 massage_robot_ws/
-├── docs/                    # 架构、手法/视觉方案、真机检查表
 └── src/
     ├── massage_description/ # 项目 Xacro、按摩头、TCP、FT 和世界
     ├── massage_motion/      # 规划、执行、柔顺公共接口和后端
@@ -137,8 +135,8 @@ Gazebo、Robot State Publisher、MoveIt 和 RViz 均使用
 `massage_description/urdf/jaka_s5_massage.urdf.xacro`。规划和工艺目标统一使用
 `massage_tool_tip`，不能再把法兰 `Link_06` 当作接触点。
 
-当前程序化柔顺按压阶段的目标、实现边界和实施顺序见
-[当前阶段：程序化柔顺按压与基础业务动作](docs/current_stage_programmatic_compliance.md)。
+推法轨迹的安全边界目前停留在自由空间：位置轨迹与人体接触后的力位复合控制是两个独立阶段，
+真机入口在后一阶段完成并验证前不会发送推法运动命令。
 
 ## 仿真启动
 
@@ -183,10 +181,8 @@ ros2 launch massage_bringup compliant_press_task_demo.launch.py \
 
 ## 真机启动
 
-首次连接控制柜时，先按照
-[JAKA S5 首次运动前上机验证 Runbook](docs/jaka_pre_motion_runbook.md)
-完成物理连接、固定 IP-MAC 绑定核对、SDK 只读状态和 MoveIt 只规划验证。当前控制柜信息为
-JKCab23、192.168.66.200、00:18:7D:ED:79:7B，推荐网络拓扑为：
+首次连接控制柜时，必须依次完成物理连接、现场网络配置、SDK 只读状态和 MoveIt 只规划验证。
+推荐网络拓扑为：
 
 ~~~text
 电脑/工作服务器 -> 现场路由器（固定地址绑定） -> JAKA 控制柜 -> JAKA S5
@@ -266,8 +262,6 @@ ros2 launch massage_bringup real_motion_smoke_demo.launch.py \
 `0.008140218 rad`、终点误差 `0.001859782 rad`，Action、MoveIt 和 demo 均返回成功。
 该结果接近容差边界，因此不能单独证明重复精度、反向运动和长轨迹；这些项目已由后续重复性、
 中距离往返和完整回待机测试分别完成验证。
-完整记录见
-[JAKA Servo 队列真机小位移测试报告](docs/jaka_servo_queue_real_test_report_2026-08-18.md)。
 
 正反向重复性批次使用固定基准和固定正向目标，默认只规划首个目标。显式执行后按
 `positive -> negative` 完成三轮，任一失败立即停止，并将每程结果写入
@@ -297,8 +291,7 @@ Action Goal 前拒绝执行，不依赖人工核对。
 
 批次要求六程全部通过、每程完成率至少 90%，且同方向三次最终位置极差不超过
 `0.001 rad`。这组门禁比驱动的单程 Action 成功条件更严格。
-2026-08-18 真机六程已通过，详细数据见
-[JAKA 小位移正反向重复性真机测试报告](docs/jaka_motion_repeatability_real_test_report_2026-08-18.md)。
+2026-08-18 真机六程已通过。
 
 中距离门禁首先只生成当前位置到业务待机位姿 `25%` 处的固定绝对目标，并进行三次竞争规划。
 该入口没有 `execute` 参数，也不创建轨迹执行器：
@@ -334,9 +327,7 @@ ros2 launch massage_bringup home_segment_round_trip_real.launch.py \
 `HOME SEGMENT ROUND-TRIP: PASS` 才表示通过。
 
 2026-08-19 已依次完成 `ratio=0.25`、`ratio=0.50` 往返和完整回待机。五段轨迹均无队列饥饿，
-完整回待机最大单关节行程为 `0.484582 rad`、最大终点误差为 `0.001832293 rad`。结果与结构化
-数据见 [JAKA 25% 分段往返真机测试报告](docs/jaka_home_segment_round_trip_real_test_report_2026-08-19.md)
-和 [JAKA 中距离与完整回待机真机测试报告](docs/jaka_home_motion_gate_real_test_report_2026-08-19.md)。
+完整回待机最大单关节行程为 `0.484582 rad`、最大终点误差为 `0.001832293 rad`。
 
 不改变目标关节位置的 Action 协议验证用于检查 feedback、并发 Goal 拒绝、取消和取消后恢复。
 默认只检查 `/joint_states` 与 Action 是否存在；显式启用后，节点将当前六轴位置作为目标，
@@ -527,17 +518,6 @@ git checkout <MASSAGE_PROJECT_COMMIT_OR_TAG>
 - ROS 2 Humble 的 MoveIt/Gazebo 组合在 `Ctrl-C` 关闭时，个别上游进程可能以 `-11` 或
   `-2` 退出。先区分“正常运行阶段故障”和“仅关闭阶段退出码”；重新启动前仍要确认所有
   相关进程已经结束。
-
-## 文档
-
-- [项目总体架构与进度](docs/project_outline.md)
-- [当前阶段：程序化柔顺按压与基础业务动作](docs/current_stage_programmatic_compliance.md)
-- [中距离运动门禁与推按揉轨迹基础](docs/next_stage_motion_and_technique_plan_2026-08-18.md)
-- [JAKA 中距离与完整回待机真机测试报告](docs/jaka_home_motion_gate_real_test_report_2026-08-19.md)
-- [推拿手法与视觉反馈方案](docs/massage_technique_vision_plan.md)
-- [JAKA S5 首次运动前上机验证 Runbook](docs/jaka_pre_motion_runbook.md)
-- [JAKA 真机联调检查表](docs/jaka_real_hardware_integration.md)
-- [规划执行实验记录](docs/planning_execution_demo_report.md)
 
 ## License
 

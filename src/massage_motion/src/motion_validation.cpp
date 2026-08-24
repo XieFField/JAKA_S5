@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <string>
+#include <unordered_set>
 #include <variant>
 
 namespace massage_motion
@@ -38,6 +39,32 @@ bool has_frame(const geometry_msgs::msg::PoseStamped & pose)
   return !pose.header.frame_id.empty();
 }
 
+bool valid_start_state(
+  const moveit_msgs::msg::RobotState & start_state,
+  std::string & message)
+{
+  const auto & joint_state = start_state.joint_state;
+  if (joint_state.name.empty() ||
+    joint_state.name.size() != joint_state.position.size())
+  {
+    message = "start_state joint names and positions must be non-empty and aligned";
+    return false;
+  }
+  std::unordered_set<std::string> names;
+  names.reserve(joint_state.name.size());
+  for (std::size_t index = 0; index < joint_state.name.size(); ++index)
+  {
+    if (joint_state.name[index].empty() ||
+      !names.emplace(joint_state.name[index]).second ||
+      !std::isfinite(joint_state.position[index]))
+    {
+      message = "start_state contains an empty/duplicate joint name or non-finite position";
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 ValidationResult validate_motion_request(const MotionRequest & request)
@@ -54,6 +81,13 @@ ValidationResult validate_motion_request(const MotionRequest & request)
   if (!std::isfinite(request.planning_timeout) 
       || request.planning_timeout <= 0.0) 
     return invalid_request("planning_timeout must be finite and greater than zero");
+
+  if (request.start_state.has_value())
+  {
+    std::string message;
+    if (!valid_start_state(*request.start_state, message))
+      return invalid_request(message);
+  }
   
 
   // 每种动作只接受自身能够解释的目标类型。

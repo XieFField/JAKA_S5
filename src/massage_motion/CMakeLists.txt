@@ -9,13 +9,21 @@ find_package(ament_cmake REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(interactive_markers REQUIRED)
+find_package(moveit_core REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(trajectory_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(yaml_cpp_vendor REQUIRED)
 
 # add library
 add_library(${PROJECT_NAME}
@@ -27,6 +35,11 @@ add_library(${PROJECT_NAME}
   src/circ_planner.cpp
   src/motion_planning_sdk.cpp
   src/competitive_motion_planner.cpp
+  src/pose_ik_candidate_generator.cpp
+  src/link_trajectory_geometry.cpp
+  src/elbow_posture_geometry.cpp
+  src/progressive_joint_checkpoints.cpp
+  src/cartesian_path_verification.cpp
   src/execution_types.cpp
   src/execution_validation.cpp
   src/execution_timing.cpp
@@ -58,6 +71,7 @@ ament_target_dependencies(${PROJECT_NAME}
   control_msgs
   controller_manager_msgs
   geometry_msgs
+  moveit_core
   moveit_msgs
   rclcpp
   moveit_ros_planning_interface
@@ -84,6 +98,23 @@ add_massage_motion_demo(admittance_response_demo geometry_msgs sensor_msgs)
 add_massage_motion_demo(wrench_processing_demo geometry_msgs)
 add_massage_motion_demo(force_admittance_demo geometry_msgs)
 add_massage_motion_demo(compliance_backend_demo)
+add_massage_motion_demo(
+  push_pose_tuner
+  geometry_msgs
+  interactive_markers
+  std_srvs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  visualization_msgs
+  yaml_cpp_vendor
+)
+target_link_libraries(push_pose_tuner yaml-cpp)
+add_massage_motion_demo(
+  push_pose_tuner_keyboard
+  geometry_msgs
+  std_srvs
+)
 
 # 安装并导出公共头文件和库目标，使其他 ament 包可以通过
 # find_package(massage_motion) 使用本库。
@@ -106,6 +137,7 @@ ament_export_dependencies(
   control_msgs
   controller_manager_msgs
   geometry_msgs
+  moveit_core
   moveit_msgs
   rclcpp
   moveit_ros_planning_interface
@@ -117,6 +149,8 @@ ament_export_dependencies(
 # TESTING
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(srdfdom REQUIRED)
+  find_package(urdf REQUIRED)
 
   ament_add_gtest(motion_validation_test
     test/motion_validation_test.cpp
@@ -238,6 +272,56 @@ if(BUILD_TESTING)
     ${PROJECT_NAME}
   )
 
+  ament_add_gtest(pose_ik_candidate_generator_test
+    test/pose_ik_candidate_generator_test.cpp
+  )
+
+  target_link_libraries(pose_ik_candidate_generator_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(link_trajectory_geometry_test
+    test/link_trajectory_geometry_test.cpp
+  )
+
+  target_link_libraries(link_trajectory_geometry_test
+    ${PROJECT_NAME}
+  )
+
+  ament_target_dependencies(link_trajectory_geometry_test
+    srdfdom
+    urdf
+  )
+
+  ament_add_gtest(elbow_posture_geometry_test
+    test/elbow_posture_geometry_test.cpp
+  )
+
+  target_link_libraries(elbow_posture_geometry_test
+    ${PROJECT_NAME}
+  )
+
+  ament_target_dependencies(elbow_posture_geometry_test
+    srdfdom
+    urdf
+  )
+
+  ament_add_gtest(progressive_joint_checkpoints_test
+    test/progressive_joint_checkpoints_test.cpp
+  )
+
+  target_link_libraries(progressive_joint_checkpoints_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(cartesian_path_verification_test
+    test/cartesian_path_verification_test.cpp
+  )
+
+  target_link_libraries(cartesian_path_verification_test
+    ${PROJECT_NAME}
+  )
+
   ament_add_gtest(guarded_trajectory_executor_test
     test/guarded_trajectory_executor_test.cpp
   )
@@ -260,6 +344,8 @@ install(
     wrench_processing_demo
     force_admittance_demo
     compliance_backend_demo
+    push_pose_tuner
+    push_pose_tuner_keyboard
   DESTINATION lib/${PROJECT_NAME}
 )
 

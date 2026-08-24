@@ -27,6 +27,15 @@ struct PlanCompetitionConfig
   double maximum_joint_travel{std::numeric_limits<double>::infinity()};
 };
 
+struct JointTravelMetric
+{
+  std::string joint_name;
+  double start_position{0.0};
+  double goal_position{0.0};
+  double signed_travel{0.0};
+  double absolute_travel{0.0};
+};
+
 struct TrajectoryMetrics
 {
   bool valid{false};
@@ -34,6 +43,8 @@ struct TrajectoryMetrics
   double joint_path_length{0.0};
   double duration{0.0};
   double maximum_joint_travel{0.0};
+  std::string maximum_joint_travel_name;
+  std::vector<JointTravelMetric> joint_travels;
 };
 
 struct PlanCandidateReport

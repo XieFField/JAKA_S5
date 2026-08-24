@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 namespace massage_motion
@@ -35,6 +36,13 @@ bool valid_config(const PlanCompetitionConfig & config)
   return weights_valid && travel_valid;
 }
 
+TrajectoryMetrics invalid_metrics(const std::string & message)
+{
+  TrajectoryMetrics metrics;
+  metrics.message = message;
+  return metrics;
+}
+
 }  // namespace
 
 TrajectoryMetrics calculate_trajectory_metrics(
@@ -43,10 +51,19 @@ TrajectoryMetrics calculate_trajectory_metrics(
   const auto & joint_trajectory = trajectory.joint_trajectory;
   if (joint_trajectory.joint_names.empty() || joint_trajectory.points.empty())
   {
-    return {false, "轨迹缺少关节名称或轨迹点", 0.0, 0.0, 0.0};
+    return invalid_metrics("轨迹缺少关节名称或轨迹点");
   }
 
   const std::size_t joint_count = joint_trajectory.joint_names.size();
+  std::unordered_set<std::string> unique_joint_names;
+  unique_joint_names.reserve(joint_count);
+  for (const auto & joint_name : joint_trajectory.joint_names)
+  {
+    if (joint_name.empty() || !unique_joint_names.emplace(joint_name).second)
+    {
+      return invalid_metrics("轨迹包含空关节名或重复关节名");
+    }
+  }
   double path_length = 0.0;
   double previous_time = -1.0;
 
@@ -56,21 +73,21 @@ TrajectoryMetrics calculate_trajectory_metrics(
     const auto & point = joint_trajectory.points[point_index];
     if (point.positions.size() != joint_count)
     {
-      return {false, "轨迹点位置数量与关节数量不匹配", 0.0, 0.0, 0.0};
+      return invalid_metrics("轨迹点位置数量与关节数量不匹配");
     }
 
     const double current_time = duration_seconds(point.time_from_start);
     if (!std::isfinite(current_time) || current_time < 0.0 ||
       current_time < previous_time)
     {
-      return {false, "轨迹时间不是有限单调序列", 0.0, 0.0, 0.0};
+      return invalid_metrics("轨迹时间不是有限单调序列");
     }
 
     for (const double position : point.positions)
     {
       if (!std::isfinite(position))
       {
-        return {false, "轨迹包含非有限关节位置", 0.0, 0.0, 0.0};
+        return invalid_metrics("轨迹包含非有限关节位置");
       }
     }
 
@@ -92,19 +109,36 @@ TrajectoryMetrics calculate_trajectory_metrics(
   const auto & start = joint_trajectory.points.front().positions;
   const auto & goal = joint_trajectory.points.back().positions;
   double maximum_joint_travel = 0.0;
+  std::string maximum_joint_travel_name;
+  std::vector<JointTravelMetric> joint_travels;
+  joint_travels.reserve(joint_count);
   for (std::size_t joint_index = 0; joint_index < joint_count; ++joint_index)
   {
-    maximum_joint_travel = std::max(
-      maximum_joint_travel,
-      std::abs(goal[joint_index] - start[joint_index]));
+    JointTravelMetric joint_travel;
+    joint_travel.joint_name = joint_trajectory.joint_names[joint_index];
+    joint_travel.start_position = start[joint_index];
+    joint_travel.goal_position = goal[joint_index];
+    joint_travel.signed_travel = goal[joint_index] - start[joint_index];
+    joint_travel.absolute_travel = std::abs(joint_travel.signed_travel);
+    if (joint_index == 0U ||
+      joint_travel.absolute_travel > maximum_joint_travel)
+    {
+      maximum_joint_travel = joint_travel.absolute_travel;
+      maximum_joint_travel_name = joint_travel.joint_name;
+    }
+    joint_travels.push_back(std::move(joint_travel));
   }
 
-  return {
-    true,
-    "轨迹指标计算成功",
-    path_length,
-    duration_seconds(joint_trajectory.points.back().time_from_start),
-    maximum_joint_travel};
+  TrajectoryMetrics metrics;
+  metrics.valid = true;
+  metrics.message = "轨迹指标计算成功";
+  metrics.joint_path_length = path_length;
+  metrics.duration = duration_seconds(
+    joint_trajectory.points.back().time_from_start);
+  metrics.maximum_joint_travel = maximum_joint_travel;
+  metrics.maximum_joint_travel_name = maximum_joint_travel_name;
+  metrics.joint_travels = std::move(joint_travels);
+  return metrics;
 }
 
 CompetitiveMotionPlanner::CompetitiveMotionPlanner(
@@ -175,7 +209,12 @@ PlanResult CompetitiveMotionPlanner::plan(const MotionRequest & request)
         }
         else if (candidate.metrics.valid)
         {
-          candidate.message = "候选轨迹超过最大单关节行程";
+          std::ostringstream message;
+          message << "候选轨迹超过最大单关节行程: joint="
+                  << candidate.metrics.maximum_joint_travel_name
+                  << " travel=" << candidate.metrics.maximum_joint_travel
+                  << " rad limit=" << config_.maximum_joint_travel << " rad";
+          candidate.message = message.str();
         }
         else
         {

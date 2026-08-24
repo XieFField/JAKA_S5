@@ -51,8 +51,15 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
     // 清除上一次的目标和路径约束
     move_group_->clearPoseTargets();
     move_group_->clearPathConstraints();
-    // 设置当前状态为起点
-    move_group_->setStartStateToCurrentState();
+    // 多段规划使用上一段终点；普通单段请求仍从当前监控状态开始。
+    if (request.start_state.has_value())
+    {
+        move_group_->setStartState(*request.start_state);
+    }
+    else
+    {
+        move_group_->setStartStateToCurrentState();
+    }
 
     // 应用 PlannerConfig 中的配置
     move_group_->setPlanningPipelineId(planner_config_.planning_pipeline);

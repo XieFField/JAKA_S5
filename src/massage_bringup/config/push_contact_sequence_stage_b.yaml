@@ -1,0 +1,67 @@
+schema_version: 1
+profile: push_contact_sequence_stage_b
+validation:
+  preview_only: true
+  free_space_start_ptp_plan_valid: true
+  free_space_push_path_execution_validated: false
+  contact_pose_plan_valid: false
+  retreat_pose_plan_valid: false
+  compliant_push_validated: false
+  candidate_revision: 685
+pre_contact_pose:
+  reference_frame: world
+  position:
+    x: -0.471238630147741
+    y: 0.156275068796867
+    z: 0.281381721182422
+  orientation:
+    x: 0.707108079859474
+    y: -5.7424007661622e-09
+    z: 5.75501982532069e-09
+    w: 0.707105482511236
+  rpy_degrees:
+    roll: 90.0002104591497
+    pitch: -9.31618383577307e-07
+    yaw: 1.02079202424574e-09
+free_space_push_test:
+  start_pose_source: pre_contact_pose
+  direction_xy:
+    x: 0.0
+    y: 1.0
+  length: 0.05
+  speed: 0.01
+  sample_period: 0.05
+  maximum_speed: 0.02
+  expected_end_pose:
+    x: -0.471238630147741
+    y: 0.206275068796867
+    z: 0.281381721182422
+business_contact_entry:
+  surface_normal:
+    x: 0.0
+    y: 0.0
+    z: 1.0
+  direction:
+    x: 0.0
+    y: 0.0
+    z: -1.0
+  maximum_distance: null
+  expected_contact_pose: null
+  status: pending_contact_height_confirmation
+business_push:
+  contact_start: business_contact_entry.expected_contact_pose
+  direction_xy:
+    x: 0.0
+    y: 1.0
+  length: 0.05
+  speed: 0.01
+  target_normal_force: null
+  expected_contact_end_pose: null
+business_retreat:
+  direction:
+    x: 0.0
+    y: 0.0
+    z: 1.0
+  distance: null
+  expected_exit_pose: null
+  status: pending_distance_confirmation

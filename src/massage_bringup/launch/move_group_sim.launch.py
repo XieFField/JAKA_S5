@@ -2,12 +2,15 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import SetParameter
 from moveit_configs_utils import MoveItConfigsBuilder
 from moveit_configs_utils.launches import generate_move_group_launch
 
 
 def generate_launch_description():
+    initial_positions_file = LaunchConfiguration("initial_positions_file")
     robot_xacro = os.path.join(
         get_package_share_directory("massage_description"),
         "urdf",
@@ -29,6 +32,7 @@ def generate_launch_description():
                 "use_gazebo": "true",
                 "use_rviz_sim": "false",
                 "use_massage_head": "true",
+                "initial_positions_file": initial_positions_file,
             },
         )
         .robot_description_semantic(file_path=semantic_file)
@@ -37,6 +41,15 @@ def generate_launch_description():
     )
     generated_launch = generate_move_group_launch(moveit_config)
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "initial_positions_file",
+            default_value=os.path.join(
+                get_package_share_directory("jaka_s5_moveit_config"),
+                "config",
+                "initial_positions.yaml",
+            ),
+            description="Initial joint positions embedded in robot_description",
+        ),
         SetParameter(name="use_sim_time", value=True),
         *generated_launch.entities,
     ])

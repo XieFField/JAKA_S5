@@ -22,6 +22,9 @@ CMakeFiles/
 .agents/
 .codex/
 
+# Local engineering notes and test evidence
+docs/
+
 # OS files
 .DS_Store
 Thumbs.db

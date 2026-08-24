@@ -14,8 +14,14 @@ import os
 def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
     run_demo = LaunchConfiguration("run_demo")
+    allow_trajectory_execution = LaunchConfiguration(
+        "allow_trajectory_execution"
+    )
     test_mode = LaunchConfiguration("test_mode")
     joint_error_tolerance = LaunchConfiguration("joint_error_tolerance")
+    initial_positions_file = LaunchConfiguration("initial_positions_file")
+    world_file = LaunchConfiguration("world_file")
+    gazebo_extra_args = LaunchConfiguration("gazebo_extra_args")
 
     bringup_share = get_package_share_directory("massage_bringup")
 
@@ -27,7 +33,12 @@ def generate_launch_description():
                 "ft_sensor_sim.launch.py",
             )
         ),
-        launch_arguments={"use_massage_head": "true"}.items(),
+        launch_arguments={
+            "use_massage_head": "true",
+            "initial_positions_file": initial_positions_file,
+            "world_file": world_file,
+            "gazebo_extra_args": gazebo_extra_args,
+        }.items(),
     )
 
     move_group_launch = IncludeLaunchDescription(
@@ -37,7 +48,11 @@ def generate_launch_description():
                 "launch",
                 "move_group_sim.launch.py",
             )
-        )
+        ),
+        launch_arguments={
+            "allow_trajectory_execution": allow_trajectory_execution,
+            "initial_positions_file": initial_positions_file,
+        }.items(),
     )
 
     rviz_launch = IncludeLaunchDescription(
@@ -49,6 +64,9 @@ def generate_launch_description():
             )
         ),
         condition=IfCondition(use_rviz),
+        launch_arguments={
+            "initial_positions_file": initial_positions_file,
+        }.items(),
     )
 
     # Gazebo 中的机器人和控制器需要先完成创建。这里使用固定延时建立最小可用
@@ -80,9 +98,37 @@ def generate_launch_description():
             description="Whether to start MoveIt RViz",
         ),
         DeclareLaunchArgument(
+            "world_file",
+            default_value=os.path.join(
+                get_package_share_directory("massage_description"),
+                "worlds",
+                "free_space.sdf",
+            ),
+            description="Gazebo world used by general motion tests",
+        ),
+        DeclareLaunchArgument(
+            "initial_positions_file",
+            default_value=os.path.join(
+                get_package_share_directory("jaka_s5_moveit_config"),
+                "config",
+                "initial_positions.yaml",
+            ),
+            description="Joint positions used to initialize the simulation",
+        ),
+        DeclareLaunchArgument(
+            "gazebo_extra_args",
+            default_value="",
+            description="Additional Ignition Gazebo arguments, such as -s",
+        ),
+        DeclareLaunchArgument(
             "run_demo",
             default_value="false",
             description="Whether to run the minimal planning/execution demo",
+        ),
+        DeclareLaunchArgument(
+            "allow_trajectory_execution",
+            default_value="true",
+            description="Whether MoveGroup may execute planned trajectories",
         ),
         DeclareLaunchArgument(
             "test_mode",

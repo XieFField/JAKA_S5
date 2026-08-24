@@ -8,11 +8,13 @@
 #define MASSAGE_MOTION__MOTION_TYPES_HPP_
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "moveit_msgs/msg/robot_state.hpp"
 #include "moveit_msgs/msg/robot_trajectory.hpp"
 
 namespace massage_motion
@@ -86,6 +88,9 @@ struct MotionRequest
   double velocity_scale{0.1};
   double acceleration_scale{0.1};
   double planning_timeout{5.0};
+  // 多段任务可把上一段轨迹终点作为下一段的规划起点。未设置时从
+  // MoveIt 当前监控状态开始规划。
+  std::optional<moveit_msgs::msg::RobotState> start_state;
   // 为支持该选项的其他规划后端保留。MoveIt 运动规划默认进行碰撞检查，
   // MoveGroupInterface 中没有与该字段直接对应的 bool 设置函数。
   bool avoid_collisions{true};

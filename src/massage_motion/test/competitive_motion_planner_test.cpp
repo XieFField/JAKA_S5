@@ -85,6 +85,36 @@ TEST(CompetitiveMotionPlannerTest, CalculatesReusableTrajectoryMetrics)
   EXPECT_DOUBLE_EQ(metrics.joint_path_length, 2.0);
   EXPECT_DOUBLE_EQ(metrics.duration, 1.0);
   EXPECT_DOUBLE_EQ(metrics.maximum_joint_travel, 1.0);
+  EXPECT_EQ(metrics.maximum_joint_travel_name, "joint_1");
+  ASSERT_EQ(metrics.joint_travels.size(), 2U);
+  EXPECT_EQ(metrics.joint_travels[0].joint_name, "joint_1");
+  EXPECT_DOUBLE_EQ(metrics.joint_travels[0].start_position, 0.0);
+  EXPECT_DOUBLE_EQ(metrics.joint_travels[0].goal_position, 1.0);
+  EXPECT_DOUBLE_EQ(metrics.joint_travels[0].signed_travel, 1.0);
+  EXPECT_DOUBLE_EQ(metrics.joint_travels[0].absolute_travel, 1.0);
+  EXPECT_EQ(metrics.joint_travels[1].joint_name, "joint_2");
+  EXPECT_DOUBLE_EQ(metrics.joint_travels[1].signed_travel, 1.0);
+}
+
+TEST(CompetitiveMotionPlannerTest, RejectsDuplicateJointNamesInMetrics)
+{
+  auto trajectory = make_trajectory({{0.0, 0.0}, {1.0, 1.0}}, 0.5);
+  trajectory.joint_trajectory.joint_names = {"joint_1", "joint_1"};
+
+  const auto metrics = calculate_trajectory_metrics(trajectory);
+
+  EXPECT_FALSE(metrics.valid);
+  EXPECT_EQ(metrics.message, "轨迹包含空关节名或重复关节名");
+}
+
+TEST(CompetitiveMotionPlannerTest, NamesMaximumJointForStationaryTrajectory)
+{
+  const auto metrics = calculate_trajectory_metrics(
+    make_trajectory({{0.0, 0.0}, {0.0, 0.0}}, 0.5));
+
+  ASSERT_TRUE(metrics.valid);
+  EXPECT_EQ(metrics.maximum_joint_travel_name, "joint_1");
+  EXPECT_DOUBLE_EQ(metrics.maximum_joint_travel, 0.0);
 }
 
 TEST(CompetitiveMotionPlannerTest, SelectsLowestScoreAcrossSourcesAndAttempts)
@@ -131,6 +161,12 @@ TEST(CompetitiveMotionPlannerTest, IgnoresFailuresAndTravelLimitViolations)
   ASSERT_TRUE(result.success);
   EXPECT_FALSE(report.candidates[0].accepted);
   EXPECT_FALSE(report.candidates[1].accepted);
+  EXPECT_NE(
+    report.candidates[1].message.find("joint=joint_1"),
+    std::string::npos);
+  EXPECT_NE(
+    report.candidates[1].message.find("limit=0.5"),
+    std::string::npos);
   EXPECT_TRUE(report.candidates[2].accepted);
 }
 
