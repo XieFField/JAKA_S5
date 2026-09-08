@@ -382,6 +382,22 @@ def generate_launch_description():
                 ),
                 value_type=int,
             ),
+            "native_joint_move_progress_timeout": ParameterValue(
+                LaunchConfiguration("native_joint_move_progress_timeout"),
+                value_type=float,
+            ),
+            "native_joint_move_progress_epsilon": ParameterValue(
+                LaunchConfiguration("native_joint_move_progress_epsilon"),
+                value_type=float,
+            ),
+            "native_joint_move_endpoint_settle_timeout": ParameterValue(
+                LaunchConfiguration("native_joint_move_endpoint_settle_timeout"),
+                value_type=float,
+            ),
+            "native_joint_move_status_log_period": ParameterValue(
+                LaunchConfiguration("native_joint_move_status_log_period"),
+                value_type=float,
+            ),
         }],
         condition=IfCondition(connect),
     )
@@ -512,6 +528,18 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "trajectory_maximum_consecutive_starvations", default_value="1"
+        ),
+        DeclareLaunchArgument(
+            "native_joint_move_progress_timeout", default_value="10.0"
+        ),
+        DeclareLaunchArgument(
+            "native_joint_move_progress_epsilon", default_value="0.00001"
+        ),
+        DeclareLaunchArgument(
+            "native_joint_move_endpoint_settle_timeout", default_value="2.0"
+        ),
+        DeclareLaunchArgument(
+            "native_joint_move_status_log_period", default_value="1.0"
         ),
         OpaqueFunction(function=_validate_arguments),
         LogInfo(

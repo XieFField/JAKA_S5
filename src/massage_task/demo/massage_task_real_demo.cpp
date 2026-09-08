@@ -3,6 +3,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <future>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -230,11 +231,15 @@ int main(int argc, char ** argv)
         double contact_z = 0.281381721182422;
         double push_length = 0.08;
         double free_space_velocity_scale = 0.05;
+        double free_space_acceleration_scale = 0.08;
         double technique_velocity_scale = 0.02;
         double technique_acceleration_scale = 0.02;
         double planning_timeout = 60.0;
         double execution_timeout_margin = 15.0;
         double robot_state_timeout = 1.0;
+        double native_ptp_max_speed = 0.20;
+        double native_ptp_max_acceleration = 0.50;
+        double inter_segment_readiness_timeout = 5.0;
         double native_cartesian_max_speed_mm_s = 100.0;
         double native_cartesian_max_acceleration_mm_s2 = 500.0;
         double native_cartesian_orientation_speed_rad_s = 0.5;
@@ -277,6 +282,9 @@ int main(int argc, char ** argv)
           "free_space_velocity_scale", free_space_velocity_scale,
           free_space_velocity_scale);
         node->get_parameter_or(
+          "free_space_acceleration_scale", free_space_acceleration_scale,
+          free_space_acceleration_scale);
+        node->get_parameter_or(
           "technique_velocity_scale", technique_velocity_scale,
           technique_velocity_scale);
         node->get_parameter_or(
@@ -289,6 +297,15 @@ int main(int argc, char ** argv)
           execution_timeout_margin);
         node->get_parameter_or(
           "robot_state_timeout", robot_state_timeout, robot_state_timeout);
+        node->get_parameter_or(
+          "native_ptp_max_speed", native_ptp_max_speed,
+          native_ptp_max_speed);
+        node->get_parameter_or(
+          "native_ptp_max_acceleration", native_ptp_max_acceleration,
+          native_ptp_max_acceleration);
+        node->get_parameter_or(
+          "inter_segment_readiness_timeout", inter_segment_readiness_timeout,
+          inter_segment_readiness_timeout);
         node->get_parameter_or(
           "native_cartesian_max_speed_mm_s",
           native_cartesian_max_speed_mm_s,
@@ -339,6 +356,9 @@ int main(int argc, char ** argv)
           !std::isfinite(push_length) || push_length <= 0.0 ||
           !std::isfinite(free_space_velocity_scale) ||
           free_space_velocity_scale <= 0.0 || free_space_velocity_scale > 1.0 ||
+          !std::isfinite(free_space_acceleration_scale) ||
+          free_space_acceleration_scale <= 0.0 ||
+          free_space_acceleration_scale > 1.0 ||
           !std::isfinite(technique_velocity_scale) ||
           technique_velocity_scale <= 0.0 || technique_velocity_scale > 1.0 ||
           !std::isfinite(technique_acceleration_scale) ||
@@ -348,6 +368,13 @@ int main(int argc, char ** argv)
           !std::isfinite(execution_timeout_margin) ||
           execution_timeout_margin <= 0.0 ||
           !std::isfinite(robot_state_timeout) || robot_state_timeout <= 0.0 ||
+          !std::isfinite(native_ptp_max_speed) ||
+          native_ptp_max_speed <= 0.0 || native_ptp_max_speed > 1.0 ||
+          !std::isfinite(native_ptp_max_acceleration) ||
+          native_ptp_max_acceleration <= 0.0 ||
+          native_ptp_max_acceleration > 5.0 ||
+          !std::isfinite(inter_segment_readiness_timeout) ||
+          inter_segment_readiness_timeout <= 0.0 ||
           !std::isfinite(native_cartesian_max_speed_mm_s) ||
           native_cartesian_max_speed_mm_s <= 0.0 ||
           !std::isfinite(native_cartesian_max_acceleration_mm_s2) ||
@@ -521,8 +548,9 @@ int main(int argc, char ** argv)
             native_config.joint_state_timeout = robot_state_timeout;
             native_config.ptp.maximum_start_error = 0.002;
             native_config.ptp.maximum_path_deviation = 0.002;
-            native_config.ptp.maximum_speed = 0.20;
-            native_config.ptp.maximum_acceleration = 0.50;
+            native_config.ptp.maximum_speed = native_ptp_max_speed;
+            native_config.ptp.maximum_acceleration =
+              native_ptp_max_acceleration;
             native_config.ptp.endpoint_tolerance = 0.002;
             native_config.ptp.timeout_margin = execution_timeout_margin;
             auto native_backend =
@@ -560,33 +588,69 @@ int main(int argc, char ** argv)
             backend,
             [&]() -> massage_motion::ExecutionValidationResult
             {
-              std::lock_guard<std::mutex> lock(robot_state_mutex);
-              if (robot_state_sequence == 0U)
+              const auto started = std::chrono::steady_clock::now();
+              const auto deadline = started + std::chrono::duration<double>(
+                inter_segment_readiness_timeout);
+              std::unique_lock<std::mutex> lock(robot_state_mutex);
+              std::size_t observed_sequence = robot_state_sequence;
+              const auto snapshot = [&](double age)
+                {
+                  return "motion=" +
+                    std::to_string(latest_robot_state.motion_state) +
+                    ", power=" +
+                    std::to_string(latest_robot_state.power_state) +
+                    ", servo=" +
+                    std::to_string(latest_robot_state.servo_state) +
+                    ", collision=" +
+                    std::to_string(latest_robot_state.collision_state) +
+                    ", age=" + std::to_string(age) + " s, sequence=" +
+                    std::to_string(robot_state_sequence);
+                };
+              while (true)
               {
-                return {
-                  false, massage_motion::ExecutionError::kRejected,
-                  "尚未收到机器人状态"};
+                const auto now = std::chrono::steady_clock::now();
+                double age = std::numeric_limits<double>::infinity();
+                if (robot_state_sequence > 0U)
+                {
+                  age = std::chrono::duration<double>(
+                    now - robot_state_received_at).count();
+                }
+                if (robot_state_sequence > 0U && age <= robot_state_timeout)
+                {
+                  if (latest_robot_state.power_state != 1 ||
+                    latest_robot_state.servo_state != 1 ||
+                    latest_robot_state.collision_state != 0)
+                  {
+                    return {
+                      false, massage_motion::ExecutionError::kRejected,
+                      "机器人安全状态异常: " + snapshot(age)};
+                  }
+                  if (latest_robot_state.motion_state == 0)
+                  {
+                    const double waited = std::chrono::duration<double>(
+                      now - started).count();
+                    if (waited > 0.05)
+                    {
+                      RCLCPP_INFO(
+                        node->get_logger(),
+                        "INTER-SEGMENT READINESS: PASS: waited=%.3f s, %s",
+                        waited, snapshot(age).c_str());
+                    }
+                    return {
+                      true, massage_motion::ExecutionError::kNone, "ready"};
+                  }
+                }
+                if (now >= deadline)
+                {
+                  return {
+                    false, massage_motion::ExecutionError::kRejected,
+                    "等待机器人段间静止状态超时: " + snapshot(age)};
+                }
+                observed_sequence = robot_state_sequence;
+                robot_state_condition.wait_until(
+                  lock, deadline,
+                  [&]() {return robot_state_sequence > observed_sequence;});
               }
-              const double age = std::chrono::duration<double>(
-                std::chrono::steady_clock::now() -
-                robot_state_received_at).count();
-              if (age > robot_state_timeout)
-              {
-                return {
-                  false, massage_motion::ExecutionError::kRejected,
-                  "机器人状态已过期"};
-              }
-              if (latest_robot_state.motion_state != 0 ||
-                latest_robot_state.power_state != 1 ||
-                latest_robot_state.servo_state != 1 ||
-                latest_robot_state.collision_state != 0)
-              {
-                return {
-                  false, massage_motion::ExecutionError::kRejected,
-                  "机器人不满足静止、上电、使能、无碰撞条件"};
-              }
-              return {
-                true, massage_motion::ExecutionError::kNone, "ready"};
             });
         }
         massage_task::MassageTaskStateMachine machine(
@@ -613,6 +677,7 @@ int main(int argc, char ** argv)
         request.execute = execute;
         request.parameters_confirmed = parameters_confirmed;
         request.free_space_velocity_scale = free_space_velocity_scale;
+        request.free_space_acceleration_scale = free_space_acceleration_scale;
         request.contact_velocity_scale = 0.005;
         request.precontact_distance = 0.020;
         request.contact_search_depth = 0.010;

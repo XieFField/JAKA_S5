@@ -159,6 +159,7 @@ struct MassageTaskRequest
   double maximum_tool_axis_error{0.0523598775598299};
   double contact_search_depth{0.010};
   double free_space_velocity_scale{0.10};
+  double free_space_acceleration_scale{0.08};
   double contact_velocity_scale{0.01};
   double planning_timeout{8.0};
   massage_motion::ExecutionTimingPolicy execution_timing;

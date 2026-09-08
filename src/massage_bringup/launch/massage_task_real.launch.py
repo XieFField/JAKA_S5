@@ -88,6 +88,9 @@ def generate_launch_description():
                 "free_space_velocity_scale": typed(
                     "free_space_velocity_scale", float
                 ),
+                "free_space_acceleration_scale": typed(
+                    "free_space_acceleration_scale", float
+                ),
                 "technique_velocity_scale": typed(
                     "technique_velocity_scale", float
                 ),
@@ -99,6 +102,15 @@ def generate_launch_description():
                     "execution_timeout_margin", float
                 ),
                 "robot_state_timeout": typed("robot_state_timeout", float),
+                "native_ptp_max_speed": typed(
+                    "native_ptp_max_speed", float
+                ),
+                "native_ptp_max_acceleration": typed(
+                    "native_ptp_max_acceleration", float
+                ),
+                "inter_segment_readiness_timeout": typed(
+                    "inter_segment_readiness_timeout", float
+                ),
                 "native_cartesian_max_speed_mm_s": typed(
                     "native_cartesian_max_speed_mm_s", float
                 ),
@@ -155,11 +167,21 @@ def generate_launch_description():
         DeclareLaunchArgument("knead_cycles", default_value="3"),
         DeclareLaunchArgument("knead_maximum_speed", default_value="0.010"),
         DeclareLaunchArgument("free_space_velocity_scale", default_value="0.15"),
+        DeclareLaunchArgument(
+            "free_space_acceleration_scale", default_value="0.08"
+        ),
         DeclareLaunchArgument("technique_velocity_scale", default_value="0.10"),
         DeclareLaunchArgument("technique_acceleration_scale", default_value="0.10"),
         DeclareLaunchArgument("planning_timeout", default_value="60.0"),
         DeclareLaunchArgument("execution_timeout_margin", default_value="15.0"),
         DeclareLaunchArgument("robot_state_timeout", default_value="1.0"),
+        DeclareLaunchArgument("native_ptp_max_speed", default_value="0.20"),
+        DeclareLaunchArgument(
+            "native_ptp_max_acceleration", default_value="0.50"
+        ),
+        DeclareLaunchArgument(
+            "inter_segment_readiness_timeout", default_value="5.0"
+        ),
         DeclareLaunchArgument(
             "native_cartesian_max_speed_mm_s", default_value="100.0"
         ),

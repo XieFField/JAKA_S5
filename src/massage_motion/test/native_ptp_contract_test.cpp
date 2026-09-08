@@ -98,4 +98,39 @@ TEST(NativePtpContractTest, AcceptsAlreadyAtTargetWithoutMotionProfile)
   EXPECT_DOUBLE_EQ(result.speed, 0.0);
 }
 
+TEST(NativePtpContractTest, AcceptsSinglePointAlreadyAtTarget)
+{
+  auto trajectory = straight_trajectory();
+  trajectory.joint_trajectory.points.resize(1U);
+  const auto result = massage_motion::make_native_ptp_command(
+    trajectory, current_state(), 10.0);
+  ASSERT_TRUE(result.valid) << result.message;
+  EXPECT_TRUE(result.already_at_target);
+  EXPECT_DOUBLE_EQ(result.speed, 0.0);
+}
+
+TEST(NativePtpContractTest, RejectsSinglePointAwayFromCurrentState)
+{
+  auto trajectory = straight_trajectory();
+  trajectory.joint_trajectory.points.resize(1U);
+  trajectory.joint_trajectory.points.front().positions.front() = 0.01;
+  const auto result = massage_motion::make_native_ptp_command(
+    trajectory, current_state(), 10.0);
+  EXPECT_FALSE(result.valid);
+  EXPECT_NE(result.message.find("只有一个轨迹点"), std::string::npos);
+  EXPECT_NE(result.message.find("target_error=0.010000000"), std::string::npos);
+}
+
+TEST(NativePtpContractTest, AlreadyAtTargetTakesPrecedenceOverStaleStart)
+{
+  auto trajectory = straight_trajectory();
+  trajectory.joint_trajectory.points.front().positions.front() = -0.10;
+  trajectory.joint_trajectory.points.back().positions = {
+    0.001, 0, 0, 0, 0, 0};
+  const auto result = massage_motion::make_native_ptp_command(
+    trajectory, current_state(), 10.0);
+  ASSERT_TRUE(result.valid) << result.message;
+  EXPECT_TRUE(result.already_at_target);
+}
+
 }  // namespace

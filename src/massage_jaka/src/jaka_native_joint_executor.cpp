@@ -137,7 +137,7 @@ massage_motion::ExecutionResult JakaNativeJointExecutor::execute(
   }
   RCLCPP_INFO(
     logger_,
-    "NATIVE PTP EQUIVALENCE GATE: PASS: request=%s, planner=%s, start_error=%.9f rad, path_deviation=%.9f rad, programmed_speed=%.6f rad/s, rapid_rate=%.3f, effective_speed=%.6f rad/s, acceleration=%.6f rad/s^2, estimated_duration=%.3f s, effective_timeout=%.3f s",
+    "NATIVE PTP EQUIVALENCE GATE: PASS: request=%s, planner=%s, start_error=%.9f rad, path_deviation=%.9f rad, programmed_speed=%.6f rad/s, rapid_rate=%.3f, nominal_effective_speed=%.6f rad/s, acceleration=%.6f rad/s^2, estimated_duration=%.3f s, effective_timeout=%.3f s",
     request.request_id.c_str(), request.planner_id.c_str(),
     command.maximum_start_error, command.maximum_path_deviation,
     command.speed, command.rapid_rate, command.effective_speed,
@@ -182,17 +182,18 @@ massage_motion::ExecutionResult JakaNativeJointExecutor::execute(
   }
   status_.store(massage_motion::ExecutionStatus::kExecuting);
   auto result_future = client_->async_get_result(goal_handle);
-  const auto client_timeout = command.effective_timeout +
-    config_.result_grace_period;
-  if (result_future.wait_for(std::chrono::duration<double>(client_timeout)) !=
+  while (result_future.wait_for(std::chrono::milliseconds(200)) !=
     std::future_status::ready)
   {
-    client_->async_cancel_goal(goal_handle);
-    status_.store(massage_motion::ExecutionStatus::kTimedOut);
-    return failure(
-      massage_motion::ExecutionError::kTimeout,
-      "等待原生 joint_move 终态超时，已请求取消", 0,
-      massage_motion::ExecutionStatus::kTimedOut);
+    if (!rclcpp::ok())
+    {
+      client_->async_cancel_goal(goal_handle);
+      status_.store(massage_motion::ExecutionStatus::kCanceled);
+      return failure(
+        massage_motion::ExecutionError::kCanceled,
+        "ROS 关闭时取消原生 joint_move", 0,
+        massage_motion::ExecutionStatus::kCanceled);
+    }
   }
   const auto wrapped = result_future.get();
   {

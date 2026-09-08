@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <future>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -165,9 +167,15 @@ massage_motion::ExecutionResult JakaNativeCartesianExecutor::execute(
   if (!std::isfinite(maximum_start_error) ||
     maximum_start_error > config_.maximum_start_error)
   {
+    std::ostringstream message;
+    message << std::fixed << std::setprecision(9)
+            << "NATIVE CARTESIAN START GATE: REJECTED: "
+            << "规划起点与当前关节状态不一致: start_error="
+            << maximum_start_error << " rad, limit="
+            << config_.maximum_start_error << " rad";
     return failure(
       massage_motion::ExecutionError::kRejected,
-      "NATIVE CARTESIAN START GATE: REJECTED: 规划起点与当前关节状态不一致");
+      message.str());
   }
 
   Action::Goal goal;
@@ -250,7 +258,7 @@ massage_motion::ExecutionResult JakaNativeCartesianExecutor::execute(
   goal.timeout = request.timeout;
   RCLCPP_INFO(
     logger_,
-    "NATIVE CARTESIAN GATE: PASS: request=%s, type=%s, start_error=%.9f rad, programmed_speed=%.3f mm/s, rapid_rate=%.3f, effective_speed=%.3f mm/s, timeout=%.3f s",
+    "NATIVE CARTESIAN GATE: PASS: request=%s, type=%s, start_error=%.9f rad, programmed_speed=%.3f mm/s, rapid_rate=%.3f, nominal_effective_speed=%.3f mm/s, timeout=%.3f s",
     request.request_id.c_str(),
     request.motion_type == massage_motion::MotionType::kLin ? "LIN" : "CIRC",
     maximum_start_error, goal.speed, rapid->rapid_rate,
@@ -286,15 +294,18 @@ massage_motion::ExecutionResult JakaNativeCartesianExecutor::execute(
   }
   status_.store(massage_motion::ExecutionStatus::kExecuting);
   auto result_future = client_->async_get_result(goal_handle);
-  if (result_future.wait_for(std::chrono::duration<double>(
-      goal.timeout + config_.result_grace_period)) != std::future_status::ready)
+  while (result_future.wait_for(std::chrono::milliseconds(200)) !=
+    std::future_status::ready)
   {
-    client_->async_cancel_goal(goal_handle);
-    status_.store(massage_motion::ExecutionStatus::kTimedOut);
-    return failure(
-      massage_motion::ExecutionError::kTimeout,
-      "等待原生笛卡尔运动终态超时，已请求取消", 0,
-      massage_motion::ExecutionStatus::kTimedOut);
+    if (!rclcpp::ok())
+    {
+      client_->async_cancel_goal(goal_handle);
+      status_.store(massage_motion::ExecutionStatus::kCanceled);
+      return failure(
+        massage_motion::ExecutionError::kCanceled,
+        "ROS 关闭时取消原生笛卡尔运动", 0,
+        massage_motion::ExecutionStatus::kCanceled);
+    }
   }
   const auto wrapped = result_future.get();
   {

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <unordered_map>
 
 namespace massage_motion
@@ -73,9 +75,9 @@ NativePtpCommand make_native_ptp_command(
     return invalid("原生 PTP 配置或请求超时无效");
   }
   const auto & joint_trajectory = trajectory.joint_trajectory;
-  if (joint_trajectory.points.size() < 2U)
+  if (joint_trajectory.points.empty())
   {
-    return invalid("原生 PTP 要求至少两个规划轨迹点");
+    return invalid("原生 PTP 规划轨迹为空");
   }
   if (joint_trajectory.joint_names != config.joint_names)
   {
@@ -100,6 +102,9 @@ NativePtpCommand make_native_ptp_command(
   std::vector<double> delta(target.size(), 0.0);
   double squared_length = 0.0;
   double maximum_delta = 0.0;
+  double maximum_target_error = 0.0;
+  std::size_t maximum_start_error_joint = 0U;
+  std::size_t maximum_target_error_joint = 0U;
   for (std::size_t joint = 0; joint < target.size(); ++joint)
   {
     if (!std::isfinite(current[joint]) || !std::isfinite(start[joint]) ||
@@ -107,23 +112,52 @@ NativePtpCommand make_native_ptp_command(
     {
       return invalid("原生 PTP 轨迹包含非有限关节值");
     }
-    result.maximum_start_error = std::max(
-      result.maximum_start_error, std::abs(current[joint] - start[joint]));
+    const double start_error = std::abs(current[joint] - start[joint]);
+    if (start_error > result.maximum_start_error)
+    {
+      result.maximum_start_error = start_error;
+      maximum_start_error_joint = joint;
+    }
+    const double target_error = std::abs(current[joint] - target[joint]);
+    if (target_error > maximum_target_error)
+    {
+      maximum_target_error = target_error;
+      maximum_target_error_joint = joint;
+    }
     delta[joint] = target[joint] - start[joint];
     maximum_delta = std::max(maximum_delta, std::abs(delta[joint]));
     squared_length += delta[joint] * delta[joint];
   }
-  if (result.maximum_start_error > config.maximum_start_error)
-  {
-    result.message = "原生 PTP 起点与当前关节状态不一致";
-    return result;
-  }
-  if (maximum_delta <= config.endpoint_tolerance)
+  // A no-op is safe even when MoveIt supplied a stale or single-point start:
+  // no native command will be sent. Compare the live state to the target.
+  if (maximum_target_error <= config.endpoint_tolerance)
   {
     result.valid = true;
     result.already_at_target = true;
     result.effective_timeout = requested_timeout;
-    result.message = "原生 PTP 目标已在终点容差内；不发送运动命令";
+    result.message = "原生 PTP 当前状态已在终点容差内；不发送运动命令";
+    return result;
+  }
+  if (joint_trajectory.points.size() == 1U)
+  {
+    std::ostringstream message;
+    message << std::fixed << std::setprecision(9)
+            << "原生 PTP 只有一个轨迹点且当前状态尚未到达目标: joint="
+            << config.joint_names[maximum_target_error_joint]
+            << ", target_error=" << maximum_target_error
+            << " rad, tolerance=" << config.endpoint_tolerance << " rad";
+    result.message = message.str();
+    return result;
+  }
+  if (result.maximum_start_error > config.maximum_start_error)
+  {
+    std::ostringstream message;
+    message << std::fixed << std::setprecision(9)
+            << "原生 PTP 起点与当前关节状态不一致: joint="
+            << config.joint_names[maximum_start_error_joint]
+            << ", start_error=" << result.maximum_start_error
+            << " rad, limit=" << config.maximum_start_error << " rad";
+    result.message = message.str();
     return result;
   }
   if (squared_length <= 1e-16) return invalid("原生 PTP 起终点没有有效位移");

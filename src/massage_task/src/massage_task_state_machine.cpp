@@ -165,6 +165,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
     finite_positive(request.contact_search_depth) &&
     finite_positive(request.free_space_velocity_scale) &&
     request.free_space_velocity_scale <= 1.0 &&
+    finite_positive(request.free_space_acceleration_scale) &&
+    request.free_space_acceleration_scale <= 1.0 &&
     finite_positive(request.planning_timeout) &&
     request.push_repetitions > 0U && request.push_repetitions <= 100U &&
     finite_positive(request.safe_return_patient_margin) &&
@@ -312,14 +314,16 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
 
   const auto motion_request = [&](
     const std::string & suffix, massage_motion::MotionType type,
-    const massage_motion::MotionTarget & target, double scale)
+    const massage_motion::MotionTarget & target, double velocity_scale,
+    double acceleration_scale = 0.0)
     {
       massage_motion::MotionRequest motion;
       motion.request_id = request.task_id + "_" + suffix;
       motion.motion_type = type;
       motion.target = target;
-      motion.velocity_scale = scale;
-      motion.acceleration_scale = scale;
+      motion.velocity_scale = velocity_scale;
+      motion.acceleration_scale = acceleration_scale > 0.0 ?
+        acceleration_scale : velocity_scale;
       motion.planning_timeout = request.planning_timeout;
       motion.avoid_collisions = true;
       return motion;
@@ -327,7 +331,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
 
   const auto execute_plan = [&](const massage_motion::PlanResult & plan,
       const std::string & id,
-      const massage_motion::MotionRequest * motion = nullptr) -> bool
+      const massage_motion::MotionRequest * motion = nullptr,
+      bool defer_start_mismatch = false) -> bool
     {
       if (plan_only)
       {
@@ -374,11 +379,22 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
           result.last_execution_result = executor_->execute(execution);
           if (!result.last_execution_result.success)
           {
-            fail(
-              result.last_execution_result.status ==
-              massage_motion::ExecutionStatus::kCanceled ?
-              MassageTaskError::kCanceled : MassageTaskError::kExecutionFailed,
-              result.last_execution_result.message);
+            const bool retryable_start_mismatch =
+              defer_start_mismatch && semantic_motion &&
+              result.last_execution_result.error ==
+              massage_motion::ExecutionError::kRejected &&
+              (result.last_execution_result.message.find(
+              "原生 PTP 起点与当前关节状态不一致") != std::string::npos ||
+              result.last_execution_result.message.find(
+              "NATIVE CARTESIAN START GATE: REJECTED") != std::string::npos);
+            if (!retryable_start_mismatch)
+            {
+              fail(
+                result.last_execution_result.status ==
+                massage_motion::ExecutionStatus::kCanceled ?
+                MassageTaskError::kCanceled : MassageTaskError::kExecutionFailed,
+                result.last_execution_result.message);
+            }
             return false;
           }
           robot_moved = true;
@@ -396,11 +412,40 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
           semantic_motion.target = segment.target;
           semantic_motion.velocity_scale = segment.velocity_scale;
           semantic_motion.acceleration_scale = segment.acceleration_scale;
+          semantic_motion.planning_timeout = request.planning_timeout;
+          semantic_motion.avoid_collisions = true;
+
+          // Native LIN/CIRC finishes within Cartesian tolerances, so its joint
+          // endpoint need not equal MoveIt's nominal IK endpoint. Replan every
+          // semantic segment from the latest measured state before dispatch.
+          const auto refreshed = motion_planner_->plan(semantic_motion);
+          if (!refreshed.success ||
+            refreshed.trajectory.joint_trajectory.points.empty())
+          {
+            fail(
+              MassageTaskError::kPlanningFailed,
+              "笛卡尔分段实时起点重规划失败: " + refreshed.message);
+            return false;
+          }
+          auto refreshed_alignment_config = alignment_config;
+          refreshed_alignment_config.inspect_all_samples = true;
+          const auto refreshed_alignment =
+            alignment_validator_->validate_trajectory(
+            refreshed.trajectory, refreshed_alignment_config);
+          result.alignment_results.push_back(refreshed_alignment);
+          if (!refreshed_alignment.valid || !refreshed_alignment.accepted)
+          {
+            fail(
+              MassageTaskError::kToolAlignmentFailed,
+              "笛卡尔分段实时起点工具姿态门禁失败: " +
+              refreshed_alignment.message);
+            return false;
+          }
           if (!dispatch(
-              segment.trajectory,
+              refreshed.trajectory,
               request.task_id + "_" + id + "_segment_" +
               std::to_string(index + 1U),
-              &semantic_motion, segment.planner_id,
+              &semantic_motion, refreshed.planner_id,
               segment.desired_cartesian_speed_m_s))
           {
             return false;
@@ -469,9 +514,45 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
       {
         return false;
       }
-      if (!execute_plan(result.last_plan_result, to_string(next), &motion))
+      if (!execute_plan(
+          result.last_plan_result, to_string(next), &motion, true))
       {
-        return false;
+        const bool retryable_start_mismatch =
+          result.primary_error == MassageTaskError::kNone &&
+          result.last_execution_result.error ==
+          massage_motion::ExecutionError::kRejected &&
+          (result.last_execution_result.message.find(
+          "原生 PTP 起点与当前关节状态不一致") != std::string::npos ||
+          result.last_execution_result.message.find(
+          "NATIVE CARTESIAN START GATE: REJECTED") != std::string::npos);
+        if (!retryable_start_mismatch)
+        {
+          return false;
+        }
+
+        // The robot did not move: refresh the live planning start and repeat
+        // this segment's planning and safety validation exactly once.
+        result.last_plan_result = plan_motion(motion);
+        if (!result.last_plan_result.success)
+        {
+          fail(
+            MassageTaskError::kPlanningFailed,
+            "PTP 起点刷新后的重规划失败: " +
+            result.last_plan_result.message);
+          return false;
+        }
+        if (gate_alignment && !validate_alignment(
+            result.last_plan_result, inspect_all_samples,
+            to_string(next) + "_start_refresh"))
+        {
+          return false;
+        }
+        if (!execute_plan(
+            result.last_plan_result, to_string(next) + "_start_refresh",
+            &motion))
+        {
+          return false;
+        }
       }
       route_progressed = true;
       return true;
@@ -489,15 +570,19 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
 
   const auto standby = motion_request(
     "standby", massage_motion::MotionType::kPtp,
-    request.standby_target, request.free_space_velocity_scale);
+    request.standby_target, request.free_space_velocity_scale,
+    request.free_space_acceleration_scale);
   const auto work_ready = motion_request(
     "work_ready", massage_motion::MotionType::kPtp,
-    massage_motion::PoseTarget{work_ready_pose}, request.free_space_velocity_scale);
+    massage_motion::PoseTarget{work_ready_pose}, request.free_space_velocity_scale,
+    request.free_space_acceleration_scale);
   const auto precontact = motion_request(
     "precontact", massage_motion::MotionType::kLin,
     massage_motion::PoseTarget{precontact_pose},
     compliant_contact ? request.contact_velocity_scale :
-    request.free_space_velocity_scale);
+    request.free_space_velocity_scale,
+    compliant_contact ? request.contact_velocity_scale :
+    request.free_space_acceleration_scale);
   const auto search = motion_request(
     "guarded_contact", massage_motion::MotionType::kLin,
     massage_motion::PoseTarget{search_pose}, request.contact_velocity_scale);
@@ -643,7 +728,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
         "technique_start_" + std::to_string(repetition + 1U),
         massage_motion::MotionType::kLin,
         massage_motion::PoseTarget{first_contact_pose},
-        request.free_space_velocity_scale);
+        request.free_space_velocity_scale,
+        request.free_space_acceleration_scale);
       if (!plan_and_execute(
           technique_start, MassageTaskState::kMoveTechniqueStart, true, true))
       {
@@ -707,7 +793,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
           "inter_cycle_retreat_" + std::to_string(repetition + 1U),
           massage_motion::MotionType::kLin,
           massage_motion::PoseTarget{end_precontact_pose},
-          request.free_space_velocity_scale);
+          request.free_space_velocity_scale,
+          request.free_space_acceleration_scale);
         if (!plan_and_execute(
             inter_cycle_retreat, MassageTaskState::kInterCycleRetreat,
             true, true))
@@ -719,7 +806,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
           "inter_cycle_return_" + std::to_string(repetition + 1U),
           massage_motion::MotionType::kLin,
           massage_motion::PoseTarget{precontact_pose},
-          request.free_space_velocity_scale);
+          request.free_space_velocity_scale,
+          request.free_space_acceleration_scale);
         if (!plan_and_execute(
             inter_cycle_return, MassageTaskState::kInterCycleReturn,
             true, true))
@@ -935,7 +1023,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
         "inter_cycle_return_" + std::to_string(repetition + 1U),
         massage_motion::MotionType::kLin,
         massage_motion::PoseTarget{precontact_pose},
-        request.free_space_velocity_scale);
+        request.free_space_velocity_scale,
+        request.free_space_acceleration_scale);
       if (!plan_and_execute(
           inter_cycle_return, MassageTaskState::kInterCycleReturn,
           true, true))
@@ -979,7 +1068,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
     const auto recovery_raise = motion_request(
       "recovery_raise", massage_motion::MotionType::kLin,
       massage_motion::PoseTarget{recovery_raise_pose},
-      request.free_space_velocity_scale);
+      request.free_space_velocity_scale,
+      request.free_space_acceleration_scale);
     transition(MassageTaskState::kRetreat);
     const auto retreat_plan = plan_motion(recovery_raise);
     recovery_ok = retreat_plan.success &&
@@ -994,7 +1084,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
       const auto overhead_return = motion_request(
         "return_overhead", massage_motion::MotionType::kLin,
         massage_motion::PoseTarget{work_ready_pose},
-        request.free_space_velocity_scale);
+        request.free_space_velocity_scale,
+        request.free_space_acceleration_scale);
       transition(MassageTaskState::kReturnOverhead);
       const auto overhead_plan = plan_motion(overhead_return);
       recovery_ok = overhead_plan.success &&
@@ -1015,7 +1106,8 @@ MassageTaskResult MassageTaskStateMachine::run(const MassageTaskRequest & reques
       const auto safe_exit = motion_request(
         "safe_return_exit", massage_motion::MotionType::kLin,
         massage_motion::PoseTarget{safe_exit_pose},
-        request.free_space_velocity_scale);
+        request.free_space_velocity_scale,
+        request.free_space_acceleration_scale);
       transition(MassageTaskState::kMoveSafeReturnExit);
       const auto safe_exit_plan = plan_motion(safe_exit);
       recovery_ok = safe_exit_plan.success &&
