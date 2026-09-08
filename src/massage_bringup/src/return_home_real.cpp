@@ -17,6 +17,7 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 
 #include "massage_bringup/default_targets.hpp"
+#include "massage_jaka/jaka_native_joint_executor.hpp"
 #include "massage_motion/competitive_motion_planner.hpp"
 #include "massage_motion/guarded_trajectory_executor.hpp"
 #include "massage_motion/motion_planning_sdk.hpp"
@@ -125,8 +126,8 @@ int main(int argc, char ** argv)
   bool execute = false;
   bool parameters_confirmed = false;
   int planning_attempts = 3;
-  double velocity_scale = 0.1;
-  double acceleration_scale = 0.1;
+  double velocity_scale = 0.4;
+  double acceleration_scale = 0.4;
   double planning_timeout = 5.0;
   double execution_timeout_margin = 15.0;
   double state_timeout = 3.0;
@@ -134,12 +135,13 @@ int main(int argc, char ** argv)
   double feedback_timeout = 1.0;
   double maximum_joint_travel = 0.55;
   double endpoint_tolerance = 0.002;
+  std::string real_ptp_backend = "native_joint_move";
   std::string output_csv;
   node->get_parameter_or("execute", execute, false);
   node->get_parameter_or("parameters_confirmed", parameters_confirmed, false);
   node->get_parameter_or("planning_attempts", planning_attempts, 3);
-  node->get_parameter_or("velocity_scale", velocity_scale, 0.02);
-  node->get_parameter_or("acceleration_scale", acceleration_scale, 0.02);
+  node->get_parameter_or("velocity_scale", velocity_scale, 0.2);
+  node->get_parameter_or("acceleration_scale", acceleration_scale, 0.2);
   node->get_parameter_or("planning_timeout", planning_timeout, 5.0);
   node->get_parameter_or(
     "execution_timeout_margin", execution_timeout_margin, 15.0);
@@ -148,6 +150,9 @@ int main(int argc, char ** argv)
   node->get_parameter_or("feedback_timeout", feedback_timeout, 1.0);
   node->get_parameter_or("maximum_joint_travel", maximum_joint_travel, 0.55);
   node->get_parameter_or("endpoint_tolerance", endpoint_tolerance, 0.002);
+  node->get_parameter_or(
+    "real_ptp_backend", real_ptp_backend,
+    std::string("native_joint_move"));
   node->get_parameter_or("output_csv", output_csv, std::string{});
   if (output_csv.empty())
   {
@@ -173,7 +178,9 @@ int main(int argc, char ** argv)
     readiness_timeout <= 0.0 || !std::isfinite(feedback_timeout) ||
     feedback_timeout <= 0.0 || !std::isfinite(maximum_joint_travel) ||
     maximum_joint_travel <= 0.0 || !std::isfinite(endpoint_tolerance) ||
-    endpoint_tolerance <= 0.0 || endpoint_tolerance >= maximum_joint_travel)
+    endpoint_tolerance <= 0.0 || endpoint_tolerance >= maximum_joint_travel ||
+    (real_ptp_backend != "native_joint_move" &&
+    real_ptp_backend != "moveit_servo"))
   {
     RCLCPP_ERROR(node->get_logger(), "真机回待机参数无效");
     rclcpp::shutdown();
@@ -296,7 +303,7 @@ int main(int argc, char ** argv)
 
     if (!already_at_target)
     {
-      if (execute)
+      if (execute && real_ptp_backend == "moveit_servo")
       {
         auto parameter_node = std::make_shared<rclcpp::Node>(
           "return_home_driver_parameter_client");
@@ -355,8 +362,29 @@ int main(int argc, char ** argv)
       std::shared_ptr<massage_motion::ITrajectoryExecutor> trajectory_executor;
       if (execute)
       {
-        auto backend =
-          std::make_shared<massage_motion::MoveItTrajectoryExecutor>(node);
+        std::shared_ptr<massage_motion::ITrajectoryExecutor> backend;
+        if (real_ptp_backend == "native_joint_move")
+        {
+          massage_jaka::JakaNativeJointExecutorConfig native_config;
+          native_config.joint_state_timeout = feedback_timeout;
+          native_config.ptp.maximum_start_error = 0.002;
+          native_config.ptp.maximum_path_deviation = 0.002;
+          native_config.ptp.maximum_speed = 0.20;
+          native_config.ptp.maximum_acceleration = 0.50;
+          native_config.ptp.endpoint_tolerance = endpoint_tolerance;
+          native_config.ptp.timeout_margin = execution_timeout_margin;
+          backend = std::make_shared<massage_jaka::JakaNativeJointExecutor>(
+            node, native_config);
+        }
+        else
+        {
+          backend =
+            std::make_shared<massage_motion::MoveItTrajectoryExecutor>(node);
+        }
+        RCLCPP_INFO(
+          node->get_logger(),
+          "PTP BACKEND: %s; automatic_fallback=false",
+          real_ptp_backend.c_str());
         trajectory_executor =
           std::make_shared<massage_motion::GuardedTrajectoryExecutor>(
           backend,

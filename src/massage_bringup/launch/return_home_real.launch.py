@@ -67,6 +67,7 @@ def generate_launch_description():
                 "feedback_timeout": float_parameter("feedback_timeout"),
                 "maximum_joint_travel": float_parameter("maximum_joint_travel"),
                 "endpoint_tolerance": float_parameter("endpoint_tolerance"),
+                "real_ptp_backend": LaunchConfiguration("real_ptp_backend"),
                 "output_csv": LaunchConfiguration("output_csv"),
             },
         ],
@@ -77,8 +78,8 @@ def generate_launch_description():
             DeclareLaunchArgument("execute", default_value="false"),
             DeclareLaunchArgument("parameters_confirmed", default_value="false"),
             DeclareLaunchArgument("planning_attempts", default_value="3"),
-            DeclareLaunchArgument("velocity_scale", default_value="0.02"),
-            DeclareLaunchArgument("acceleration_scale", default_value="0.02"),
+            DeclareLaunchArgument("velocity_scale", default_value="0.2"),
+            DeclareLaunchArgument("acceleration_scale", default_value="0.2"),
             DeclareLaunchArgument("planning_timeout", default_value="5.0"),
             DeclareLaunchArgument(
                 "execution_timeout_margin", default_value="15.0"
@@ -86,8 +87,11 @@ def generate_launch_description():
             DeclareLaunchArgument("state_timeout", default_value="3.0"),
             DeclareLaunchArgument("readiness_timeout", default_value="60.0"),
             DeclareLaunchArgument("feedback_timeout", default_value="1.0"),
-            DeclareLaunchArgument("maximum_joint_travel", default_value="0.55"),
+            DeclareLaunchArgument("maximum_joint_travel", default_value="2.55"),
             DeclareLaunchArgument("endpoint_tolerance", default_value="0.002"),
+            DeclareLaunchArgument(
+                "real_ptp_backend", default_value="native_joint_move"
+            ),
             DeclareLaunchArgument("output_csv", default_value=""),
             node,
         ]

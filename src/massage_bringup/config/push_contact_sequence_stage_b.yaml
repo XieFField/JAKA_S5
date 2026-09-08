@@ -14,15 +14,9 @@ pre_contact_pose:
     x: -0.471238630147741
     y: 0.156275068796867
     z: 0.281381721182422
-  orientation:
-    x: 0.707108079859474
-    y: -5.7424007661622e-09
-    z: 5.75501982532069e-09
-    w: 0.707105482511236
-  rpy_degrees:
-    roll: 90.0002104591497
-    pitch: -9.31618383577307e-07
-    yaw: 1.02079202424574e-09
+  orientation_policy:
+    tool_z: negative_surface_normal
+    tool_x: projected_push_direction
 free_space_push_test:
   start_pose_source: pre_contact_pose
   direction_xy:

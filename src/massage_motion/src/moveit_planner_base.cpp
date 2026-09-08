@@ -24,7 +24,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
             validation_result.message,
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
-            this->planner_id().c_str()
+            this->planner_id().c_str(),
+            {}
         };
     }
     // 检查请求的运动类型是否受支持
@@ -44,7 +45,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
             "不支持的运动类型",
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
-            this->planner_id().c_str()
+            this->planner_id().c_str(),
+            {}
         };
     }
 
@@ -84,7 +86,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
             target_result.message,
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
-            this->planner_id()
+            this->planner_id(),
+            {}
         };
     }
 
@@ -108,7 +111,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
             moveit::core::error_code_to_string(error_code),
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
-            this->planner_id().c_str()
+            this->planner_id().c_str(),
+            {}
         };
     }
 
@@ -130,7 +134,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
             "规划结果为空轨迹",
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
-            this->planner_id().c_str()
+            this->planner_id().c_str(),
+            {}
         };
     }
 
@@ -141,7 +146,8 @@ PlanResult MoveItPlannerBase::plan(const MotionRequest & request)
         moveit::core::error_code_to_string(error_code),
         moveit_plan.trajectory_,
         moveit_plan.planning_time_,
-        this->planner_id().c_str()
+        this->planner_id().c_str(),
+        {}
     };
 }
 

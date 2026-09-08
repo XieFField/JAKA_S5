@@ -7,13 +7,12 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(jaka_msgs REQUIRED)
+find_package(massage_jaka REQUIRED)
 find_package(massage_motion REQUIRED)
 find_package(massage_task REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(tf2 REQUIRED)
-find_package(tf2_geometry_msgs REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 
 add_executable(return_home_sim src/return_home_sim.cpp)
@@ -31,8 +30,20 @@ target_compile_features(return_home_real PUBLIC cxx_std_17)
 target_include_directories(return_home_real PRIVATE include)
 ament_target_dependencies(return_home_real
   jaka_msgs
+  massage_jaka
   massage_motion
   massage_task
+  rclcpp
+  sensor_msgs
+)
+
+add_executable(r10_precontact_real src/r10_precontact_real.cpp)
+target_compile_features(r10_precontact_real PUBLIC cxx_std_17)
+target_include_directories(r10_precontact_real PRIVATE include)
+ament_target_dependencies(r10_precontact_real
+  jaka_msgs
+  massage_motion
+  moveit_ros_planning
   rclcpp
   sensor_msgs
 )
@@ -45,11 +56,19 @@ ament_target_dependencies(push_trajectory_sim
   moveit_ros_planning
   rclcpp
   sensor_msgs
-  tf2
-  tf2_geometry_msgs
   yaml_cpp_vendor
 )
 target_link_libraries(push_trajectory_sim yaml-cpp)
+
+add_executable(technique_trajectory_demo src/technique_trajectory_demo.cpp)
+target_compile_features(technique_trajectory_demo PUBLIC cxx_std_17)
+target_include_directories(technique_trajectory_demo PRIVATE include)
+ament_target_dependencies(technique_trajectory_demo
+  massage_motion
+  moveit_ros_planning
+  rclcpp
+  sensor_msgs
+)
 
 add_executable(
   push_trajectory_real_plan_only
@@ -66,8 +85,6 @@ ament_target_dependencies(push_trajectory_real_plan_only
   moveit_ros_planning
   rclcpp
   sensor_msgs
-  tf2
-  tf2_geometry_msgs
   yaml_cpp_vendor
 )
 target_link_libraries(push_trajectory_real_plan_only yaml-cpp)
@@ -102,7 +119,9 @@ install(
     home_segment_planning_real
     home_segment_round_trip_real
     push_trajectory_sim
+    technique_trajectory_demo
     push_trajectory_real_plan_only
+    r10_precontact_real
     return_home_sim
     return_home_real
   DESTINATION lib/${PROJECT_NAME}

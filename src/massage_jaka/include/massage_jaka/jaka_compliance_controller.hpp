@@ -67,6 +67,8 @@ public:
         JakaComplianceConfig config = {});
     ~JakaComplianceController() override;
 
+    massage_motion::ComplianceCapabilities capabilities() const override;
+
     massage_motion::ComplianceResult start(
         const massage_motion::ComplianceRequest & request) override;
     // 只写入并读回真机导纳配置，不启用力控。

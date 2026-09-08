@@ -35,7 +35,8 @@ PlanResult MotionPlanningSdk::plan(const MotionRequest & request)
             "没有注册对应动作类型的规划器",
             moveit_msgs::msg::RobotTrajectory{},
             0.0,
-            ""
+            "",
+            {}
         };
     }
 

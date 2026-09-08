@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="massage_bed_contact_test">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="ignition-gazebo-contact-system" name="gz::sim::systems::Contact"/>
+    <plugin filename="ignition-gazebo-forcetorque-system" name="ignition::gazebo::systems::ForceTorque"/>
+    <plugin filename="ignition-gazebo-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="ground_link">
+        <collision name="ground_collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="ground_visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 水平刚性测试面模拟仰卧患者表面的几何方向。本阶段用它获得确定性
+         接触力，人体等效柔度由导纳参数承担；它不是人体材料模型。 -->
+    <model name="massage_bed_pad">
+      <static>true</static>
+      <pose>-0.471238630 0.156275069 0.225 0 0 0</pose>
+      <link name="pad_link">
+        <collision name="pad_collision">
+          <geometry><box><size>0.24 0.20 0.05</size></box></geometry>
+          <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
+        </collision>
+        <visual name="pad_visual">
+          <geometry><box><size>0.24 0.20 0.05</size></box></geometry>
+          <material><ambient>0.25 0.55 0.40 1</ambient><diffuse>0.25 0.55 0.40 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

@@ -125,9 +125,6 @@ def generate_launch_description():
                 "ik_duplicate_tolerance": float_parameter(
                     "ik_duplicate_tolerance"
                 ),
-                "technique_roll_degrees": float_parameter(
-                    "technique_roll_degrees"
-                ),
                 "velocity_scale": float_parameter("velocity_scale"),
                 "acceleration_scale": float_parameter("acceleration_scale"),
                 "planning_timeout": float_parameter("planning_timeout"),
@@ -159,7 +156,27 @@ def generate_launch_description():
                 ),
                 "elbow_link_name": LaunchConfiguration("elbow_link_name"),
                 "wrist_link_name": LaunchConfiguration("wrist_link_name"),
+                "workflow_mode": LaunchConfiguration("workflow_mode"),
                 "test_mode": LaunchConfiguration("test_mode"),
+                "progressive_checkpoint_fractions": ParameterValue(
+                    LaunchConfiguration("progressive_checkpoint_fractions"),
+                    value_type=str,
+                ),
+                "progressive_maximum_checkpoint_count": ParameterValue(
+                    LaunchConfiguration(
+                        "progressive_maximum_checkpoint_count"
+                    ),
+                    value_type=int,
+                ),
+                "progressive_maximum_segment_joint_travel": float_parameter(
+                    "progressive_maximum_segment_joint_travel"
+                ),
+                "progressive_joint_continuity_tolerance": float_parameter(
+                    "progressive_joint_continuity_tolerance"
+                ),
+                "progressive_minimum_direction_observability": float_parameter(
+                    "progressive_minimum_direction_observability"
+                ),
                 "cartesian_position_tolerance": float_parameter(
                     "cartesian_position_tolerance"
                 ),
@@ -270,9 +287,6 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "ik_duplicate_tolerance", default_value="0.0001"
             ),
-            DeclareLaunchArgument(
-                "technique_roll_degrees", default_value="90.0"
-            ),
             DeclareLaunchArgument("velocity_scale", default_value="0.05"),
             DeclareLaunchArgument(
                 "acceleration_scale", default_value="0.05"
@@ -312,7 +326,31 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "wrist_link_name", default_value="Link_04"
             ),
+            DeclareLaunchArgument(
+                "workflow_mode",
+                default_value="full_push",
+                description="full_push or progressive_ptp",
+            ),
             DeclareLaunchArgument("test_mode", default_value="normal"),
+            DeclareLaunchArgument(
+                "progressive_checkpoint_fractions",
+                default_value="[0.10, 0.25, 0.50, 1.00]",
+            ),
+            DeclareLaunchArgument(
+                "progressive_maximum_checkpoint_count", default_value="64"
+            ),
+            DeclareLaunchArgument(
+                "progressive_maximum_segment_joint_travel",
+                default_value="0.30",
+            ),
+            DeclareLaunchArgument(
+                "progressive_joint_continuity_tolerance",
+                default_value="0.000001",
+            ),
+            DeclareLaunchArgument(
+                "progressive_minimum_direction_observability",
+                default_value="0.10",
+            ),
             DeclareLaunchArgument(
                 "cartesian_position_tolerance", default_value="0.005"
             ),

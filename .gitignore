@@ -23,7 +23,8 @@ CMakeFiles/
 .codex/
 
 # Local engineering notes and test evidence
-docs/
+docs/*
+!docs/r10_contact_force_hold_runbook.md
 
 # OS files
 .DS_Store

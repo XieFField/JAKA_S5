@@ -15,13 +15,17 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 
 add_library(${PROJECT_NAME}
+  src/force_hold_analysis.cpp
   src/jaka_compliance_controller.cpp
   src/jaka_compliance_guard.cpp
   src/jaka_error.cpp
   src/jaka_lifecycle_client.cpp
+  src/jaka_native_cartesian_executor.cpp
+  src/jaka_native_joint_executor.cpp
   src/jaka_tool_drive_client.cpp
   src/tool_response_analysis.cpp
 )
@@ -37,6 +41,7 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   sensor_msgs
   std_srvs
+  tf2
   tf2_ros
 )
 
@@ -78,6 +83,19 @@ target_compile_features(real_compliance_smoke_demo PUBLIC cxx_std_17)
 target_link_libraries(real_compliance_smoke_demo ${PROJECT_NAME})
 ament_target_dependencies(real_compliance_smoke_demo
   rclcpp
+  tf2_ros
+)
+
+add_executable(
+  real_contact_force_hold_demo
+  demo/real_contact_force_hold_demo.cpp
+)
+target_compile_features(real_contact_force_hold_demo PUBLIC cxx_std_17)
+target_link_libraries(real_contact_force_hold_demo ${PROJECT_NAME})
+ament_target_dependencies(real_contact_force_hold_demo
+  jaka_msgs
+  rclcpp
+  std_srvs
   tf2_ros
 )
 
@@ -126,6 +144,7 @@ install(
     hardware_readiness_node
     real_action_protocol_demo
     real_compliance_smoke_demo
+    real_contact_force_hold_demo
     real_ft_observation_demo
     real_motion_repeatability_demo
     real_motion_smoke_demo
@@ -139,7 +158,11 @@ ament_export_dependencies(
   jaka_msgs
   massage_motion
   rclcpp
+  rclcpp_action
+  sensor_msgs
   std_srvs
+  tf2
+  tf2_ros
 )
 
 if(BUILD_TESTING)
@@ -152,6 +175,12 @@ if(BUILD_TESTING)
     test/jaka_compliance_guard_test.cpp
   )
   target_link_libraries(jaka_compliance_guard_test ${PROJECT_NAME})
+
+  ament_add_gtest(
+    force_hold_analysis_test
+    test/force_hold_analysis_test.cpp
+  )
+  target_link_libraries(force_hold_analysis_test ${PROJECT_NAME})
 
   ament_add_gtest(
     jaka_compliance_controller_test

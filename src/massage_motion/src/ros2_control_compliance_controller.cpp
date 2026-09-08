@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "massage_motion/compliance_validation.hpp"
+#include "tf2/exceptions.h"
 
 namespace massage_motion
 {
@@ -40,6 +41,15 @@ Ros2ControlComplianceController::Ros2ControlComplianceController(
     {
         throw std::invalid_argument("Ros2ControlComplianceConfig.joint_names 不能为空");
     }
+    if (config_.cartesian_reference_frame.empty() ||
+        config_.cartesian_tool_frame.empty())
+    {
+        throw std::invalid_argument("笛卡尔位移监控坐标系不能为空");
+    }
+
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(node_->get_clock());
+    tf_listener_ = std::make_unique<tf2_ros::TransformListener>(
+        *tf_buffer_, node_, false);
 
     switch_client_ = node_->create_client<SwitchController>(
         config_.controller_manager + "/switch_controller");
@@ -99,6 +109,11 @@ Ros2ControlComplianceController::~Ros2ControlComplianceController()
     {
         monitor_thread_.join();
     }
+}
+
+ComplianceCapabilities Ros2ControlComplianceController::capabilities() const
+{
+    return {true, true};
 }
 
 ComplianceResult Ros2ControlComplianceController::start(
@@ -162,6 +177,21 @@ ComplianceResult Ros2ControlComplianceController::start(
         return result;
     }
 
+    std::array<double, 3> current_cartesian_position{};
+    std::string cartesian_error;
+    if (!wait_for_cartesian_position(current_cartesian_position, cartesian_error))
+    {
+        const ComplianceResult result{
+            false,
+            ComplianceError::kFeedbackUnavailable,
+            0,
+            "无法建立笛卡尔安全基准: " + cartesian_error,
+            ComplianceStatus::kFault};
+        status_.store(ComplianceStatus::kFault);
+        set_last_result(result);
+        return result;
+    }
+
     if (!publish_joint_reference(current_positions))
     {
         const ComplianceResult result{
@@ -198,6 +228,10 @@ ComplianceResult Ros2ControlComplianceController::start(
     {
         std::lock_guard<std::mutex> lock(data_mutex_);
         baseline_joint_positions_ = current_positions;
+        baseline_cartesian_position_ = current_cartesian_position;
+        baseline_wrench_ = config_.subtract_startup_wrench_bias ?
+            wrench_to_array(latest_wrench_.wrench) :
+            std::array<double, kCartesianDof>{};
         active_request_ = request;
         has_status_ = false;
     }
@@ -301,6 +335,11 @@ ComplianceFeedback Ros2ControlComplianceController::feedback() const
     }
 
     feedback.wrench = wrench_to_array(latest_wrench_.wrench);
+    for (std::size_t index = 0; index < kCartesianDof; ++index)
+    {
+        feedback.wrench[index] -= baseline_wrench_[index];
+    }
+    feedback.joint_names = config_.joint_names;
     feedback.joint_positions = ordered_joint_positions(latest_joint_state_);
     const auto oldest_receive_time = std::min(
         latest_joint_receive_time_, latest_wrench_receive_time_);
@@ -375,6 +414,55 @@ Ros2ControlComplianceController::current_joint_positions() const
     return ordered_joint_positions(latest_joint_state_);
 }
 
+bool Ros2ControlComplianceController::lookup_cartesian_position(
+    std::array<double, 3> & position,
+    std::string & error_message) const
+{
+    try
+    {
+        const auto transform = tf_buffer_->lookupTransform(
+            config_.cartesian_reference_frame,
+            config_.cartesian_tool_frame,
+            tf2::TimePointZero);
+        position = {
+            transform.transform.translation.x,
+            transform.transform.translation.y,
+            transform.transform.translation.z};
+        if (!std::all_of(
+                position.begin(), position.end(),
+                [](double value) {return std::isfinite(value);}))
+        {
+            error_message = "TCP TF 包含非有限数值";
+            return false;
+        }
+        error_message.clear();
+        return true;
+    }
+    catch (const tf2::TransformException & exception)
+    {
+        error_message = exception.what();
+        return false;
+    }
+}
+
+bool Ros2ControlComplianceController::wait_for_cartesian_position(
+    std::array<double, 3> & position,
+    std::string & error_message) const
+{
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::duration<double>(config_.service_timeout);
+    do
+    {
+        if (lookup_cartesian_position(position, error_message))
+        {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    while (std::chrono::steady_clock::now() < deadline);
+    return false;
+}
+
 bool Ros2ControlComplianceController::wait_for_initial_feedback()
 {
     std::unique_lock<std::mutex> lock(data_mutex_);
@@ -420,6 +508,8 @@ void Ros2ControlComplianceController::monitor_loop()
     ComplianceError stop_error = ComplianceError::kNone;
     std::string stop_message = "收到停止请求";
     std::array<double, kCartesianDof> peak_absolute_wrench{};
+    double peak_joint_displacement = 0.0;
+    double peak_selected_axis_translation = 0.0;
 
     while (rclcpp::ok() && !stop_requested_.load())
     {
@@ -428,22 +518,22 @@ void Ros2ControlComplianceController::monitor_loop()
         ComplianceRequest request;
         sensor_msgs::msg::JointState joint_state;
         geometry_msgs::msg::WrenchStamped wrench;
-        control_msgs::msg::AdmittanceControllerState controller_status;
         std::vector<double> baseline;
+        std::array<double, 3> baseline_cartesian{};
+        std::array<double, kCartesianDof> wrench_bias{};
         std::chrono::steady_clock::time_point joint_receive_time;
         std::chrono::steady_clock::time_point wrench_receive_time;
-        bool has_status = false;
 
         {
             std::lock_guard<std::mutex> lock(data_mutex_);
             request = active_request_;
             joint_state = latest_joint_state_;
             wrench = latest_wrench_;
-            controller_status = latest_status_;
             baseline = baseline_joint_positions_;
+            baseline_cartesian = baseline_cartesian_position_;
+            wrench_bias = baseline_wrench_;
             joint_receive_time = latest_joint_receive_time_;
             wrench_receive_time = latest_wrench_receive_time_;
-            has_status = has_status_;
         }
 
         const auto feedback_timeout =
@@ -465,20 +555,35 @@ void Ros2ControlComplianceController::monitor_loop()
         }
 
         double max_joint_delta = 0.0;
+        std::size_t max_joint_index = 0U;
         for (std::size_t index = 0; index < positions.size(); ++index)
         {
-            max_joint_delta = std::max(
-                max_joint_delta,
-                std::abs(positions[index] - baseline[index]));
+            const double delta = std::abs(positions[index] - baseline[index]);
+            if (delta > max_joint_delta)
+            {
+                max_joint_delta = delta;
+                max_joint_index = index;
+            }
         }
         if (max_joint_delta > request.max_joint_displacement)
         {
             stop_error = ComplianceError::kLimitExceeded;
-            stop_message = "关节位移超过柔顺安全上限";
+            stop_message =
+                "关节位移超过柔顺安全上限: joint=" +
+                config_.joint_names[max_joint_index] +
+                ", displacement=" + std::to_string(max_joint_delta) +
+                " rad, limit=" +
+                std::to_string(request.max_joint_displacement) + " rad";
             break;
         }
+        peak_joint_displacement = std::max(
+            peak_joint_displacement, max_joint_delta);
 
-        const auto wrench_values = wrench_to_array(wrench.wrench);
+        auto wrench_values = wrench_to_array(wrench.wrench);
+        for (std::size_t index = 0; index < kCartesianDof; ++index)
+        {
+            wrench_values[index] -= wrench_bias[index];
+        }
         for (std::size_t index = 0; index < kCartesianDof; ++index)
         {
             peak_absolute_wrench[index] = std::max(
@@ -521,20 +626,36 @@ void Ros2ControlComplianceController::monitor_loop()
             break;
         }
 
-        if (has_status)
+        std::array<double, 3> cartesian_position{};
+        std::string cartesian_error;
+        if (!lookup_cartesian_position(cartesian_position, cartesian_error))
         {
-            const auto & translation =
-                controller_status.admittance_position.transform.translation;
-            const double selected_translation_norm = std::sqrt(
-                (request.enabled_axes[0] ? translation.x * translation.x : 0.0) +
-                (request.enabled_axes[1] ? translation.y * translation.y : 0.0) +
-                (request.enabled_axes[2] ? translation.z * translation.z : 0.0));
-            if (selected_translation_norm > request.max_linear_displacement)
+            stop_error = ComplianceError::kFeedbackUnavailable;
+            stop_message = "笛卡尔位移安全监控失效: " + cartesian_error;
+            break;
+        }
+        double selected_translation_squared = 0.0;
+        for (std::size_t index = 0; index < 3U; ++index)
+        {
+            if (request.enabled_axes[index])
             {
-                stop_error = ComplianceError::kLimitExceeded;
-                stop_message = "导纳笛卡尔位移超过安全上限";
-                break;
+                const double delta =
+                    cartesian_position[index] - baseline_cartesian[index];
+                selected_translation_squared += delta * delta;
             }
+        }
+        const double selected_translation_norm =
+            std::sqrt(selected_translation_squared);
+        peak_selected_axis_translation = std::max(
+            peak_selected_axis_translation, selected_translation_norm);
+        if (selected_translation_norm > request.max_linear_displacement)
+        {
+            stop_error = ComplianceError::kLimitExceeded;
+            stop_message =
+                "TCP 位移超过柔顺安全上限: displacement=" +
+                std::to_string(selected_translation_norm) + " m, limit=" +
+                std::to_string(request.max_linear_displacement) + " m";
+            break;
         }
 
         if (now - started_at >= std::chrono::duration<double>(request.timeout))
@@ -561,7 +682,9 @@ void Ros2ControlComplianceController::monitor_loop()
             0,
             stop_message + "，且切回轨迹控制器失败",
             ComplianceStatus::kFault,
-            peak_absolute_wrench});
+            peak_absolute_wrench,
+            peak_joint_displacement,
+            peak_selected_axis_translation});
         return;
     }
 
@@ -573,7 +696,9 @@ void Ros2ControlComplianceController::monitor_loop()
         0,
         stop_message + "，已安全切回轨迹控制器",
         ComplianceStatus::kStopped,
-        peak_absolute_wrench});
+        peak_absolute_wrench,
+        peak_joint_displacement,
+        peak_selected_axis_translation});
 
     if (normal_stop)
     {

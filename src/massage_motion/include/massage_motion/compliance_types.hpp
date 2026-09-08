@@ -55,6 +55,8 @@ struct ComplianceResult
     ComplianceStatus status{ComplianceStatus::kIdle};
     // 后端在本次运行中观测到的六轴绝对峰值，便于故障复盘和任务层汇总。
     std::array<double, kCartesianDof> peak_absolute_wrench{};
+    double peak_joint_displacement{0.0};
+    double peak_selected_axis_translation{0.0};
 };
 
 struct ComplianceValidationResult
@@ -62,6 +64,15 @@ struct ComplianceValidationResult
     bool valid{false};
     ComplianceError error{ComplianceError::kNone};
     std::string message;
+};
+
+struct ComplianceCapabilities
+{
+    // Can consume a time-varying nominal trajectory while retaining exclusive
+    // ownership of the compliant contact phase.
+    bool reference_tracking{false};
+    // Can configure and maintain a force target internally.
+    bool force_target_management{false};
 };
 
 // 柔顺阶段的名义关节参考。控制器负责按 joint_names 映射到自身关节顺序。
@@ -78,6 +89,7 @@ struct ComplianceFeedback
 {
     ComplianceStatus status{ComplianceStatus::kIdle};
     std::array<double, kCartesianDof> wrench{};
+    std::vector<std::string> joint_names;
     std::vector<double> joint_positions;
     std::int64_t wrench_stamp_nanoseconds{0};
     double age{0.0};

@@ -100,6 +100,13 @@ TaskResult MinimalTaskStateMachine::run(const TaskRequest & request)
     execution_request.request_id = request.task_id;
     execution_request.robot_trajectory = plan_result.trajectory;
     execution_request.timeout = timing.timeout;
+    execution_request.has_motion_semantics = true;
+    execution_request.motion_type = request.motion_request.motion_type;
+    execution_request.velocity_scale = request.motion_request.velocity_scale;
+    execution_request.acceleration_scale =
+        request.motion_request.acceleration_scale;
+    execution_request.planner_id = plan_result.planner_id;
+    execution_request.motion_target = request.motion_request.target;
 
     state_.store(TaskState::kExecuting);
 

@@ -9,13 +9,12 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>jaka_msgs</depend>
+  <depend>massage_jaka</depend>
   <depend>massage_motion</depend>
   <depend>massage_task</depend>
   <depend>moveit_ros_planning</depend>
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
-  <depend>tf2</depend>
-  <depend>tf2_geometry_msgs</depend>
   <depend>yaml_cpp_vendor</depend>
 
   <exec_depend>launch</exec_depend>
@@ -30,7 +29,6 @@
   <exec_depend>massage_description</exec_depend>
   <exec_depend>jaka_s5_moveit_config</exec_depend>
   <exec_depend>jaka_driver</exec_depend>
-  <exec_depend>massage_jaka</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>

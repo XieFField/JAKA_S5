@@ -22,6 +22,17 @@ inline constexpr std::array<double, 6> kMassageHomeJointPositions{
   0.027910401738015497,
   -2.4753825550678896};
 
+/*
+-3.160921066038505,
+  1.6080484013290657,
+  -2.6790895150928824,
+  2.6720179543589007,
+  0.027910401738015497,
+  -2.4753825550678896
+  第一版的初始待机位置
+
+ */
+
 inline massage_motion::JointTarget make_massage_home_target()
 {
   return {

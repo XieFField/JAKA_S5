@@ -13,6 +13,11 @@ class IComplianceController
 public:
     virtual ~IComplianceController() = default;
 
+    virtual ComplianceCapabilities capabilities() const
+    {
+        return {};
+    }
+
     virtual ComplianceResult start(
         const ComplianceRequest & request) = 0;
 

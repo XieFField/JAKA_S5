@@ -1,0 +1,42 @@
+massage_ft_broadcaster:
+  ros__parameters:
+    sensor_name: massage_ft_sensor
+    frame_id: massage_head_link
+
+massage_admittance_controller:
+  ros__parameters:
+    joints: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    chainable_command_interfaces: [position, velocity]
+
+    kinematics:
+      plugin_name: kinematics_interface_kdl/KinematicsInterfaceKDL
+      plugin_package: kinematics_interface
+      base: world
+      tip: massage_tool_tip
+      alpha: 0.0005
+
+    ft_sensor:
+      name: massage_ft_sensor
+      frame: {id: massage_head_link}
+      filter_coefficient: 0.05
+    control:
+      frame: {id: world}
+    fixed_world_frame:
+      frame: {id: world}
+
+    gravity_compensation:
+      frame: {id: massage_head_link}
+      CoG:
+        pos: [0.0, 0.0, 0.04]
+        force: 1.962
+
+    admittance:
+      selected_axes: [false, false, true, false, false, false]
+      mass: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+      damping_ratio: [1.03, 1.03, 1.03, 1.03, 1.03, 1.03]
+      stiffness: [500.0, 500.0, 500.0, 20.0, 20.0, 20.0]
+      joint_damping: 5.0
+
+    enable_parameter_update_without_reactivation: true

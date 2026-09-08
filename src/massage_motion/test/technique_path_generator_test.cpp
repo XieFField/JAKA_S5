@@ -167,6 +167,123 @@ TEST(TechniquePathGeneratorTest, ProvidesStableDiagnosticNames)
   EXPECT_EQ(
     massage_motion::to_string(massage_motion::TechniquePathError::kPathTooLarge),
     "path_too_large");
+  EXPECT_EQ(
+    massage_motion::to_string(massage_motion::TechniquePathType::kPress),
+    "press");
+  EXPECT_EQ(
+    massage_motion::to_string(massage_motion::TechniquePathType::kKnead),
+    "knead");
+}
+
+TEST(TechniquePathGeneratorTest, GeneratesPressIntoSurfaceWithoutLiftingOff)
+{
+  massage_motion::PressPathRequest request;
+  request.contact_pose = valid_request().start_pose;
+  request.surface_normal_z = 2.0;
+  request.stroke = 0.004;
+  request.cycle_duration = 2.0;
+  request.cycles = 3U;
+  request.sample_period = 0.1;
+  request.maximum_speed = 0.01;
+
+  const auto result = massage_motion::TechniquePathGenerator::generate_press(request);
+  ASSERT_TRUE(result.success) << result.message;
+  EXPECT_EQ(result.path.type, massage_motion::TechniquePathType::kPress);
+  EXPECT_NEAR(result.path.duration, 6.0, 1.0e-12);
+  EXPECT_NEAR(result.path.points.front().pose.position.z, 0.3, 1.0e-12);
+  EXPECT_NEAR(result.path.points.back().pose.position.z, 0.3, 1.0e-12);
+  double minimum_z = std::numeric_limits<double>::infinity();
+  for (const auto & point : result.path.points)
+  {
+    minimum_z = std::min(minimum_z, point.pose.position.z);
+    EXPECT_LE(point.pose.position.z, 0.3 + 1.0e-12);
+    EXPECT_EQ(point.pose.orientation, request.contact_pose.pose.orientation);
+  }
+  EXPECT_NEAR(minimum_z, 0.296, 1.0e-12);
+}
+
+TEST(TechniquePathGeneratorTest, RejectsPressSpeedAboveLimit)
+{
+  massage_motion::PressPathRequest request;
+  request.contact_pose = valid_request().start_pose;
+  request.stroke = 0.01;
+  request.cycle_duration = 1.0;
+  request.cycles = 1U;
+  request.sample_period = 0.1;
+  request.maximum_speed = 0.02;
+  const auto result =
+    massage_motion::TechniquePathGenerator::generate_press(request);
+  EXPECT_FALSE(result.success);
+  EXPECT_NE(result.message.find("nominal_speed="), std::string::npos);
+  EXPECT_NE(result.message.find("maximum_speed="), std::string::npos);
+}
+
+TEST(TechniquePathGeneratorTest, GeneratesClosedWorldXyKnead)
+{
+  massage_motion::KneadPathRequest request;
+  request.center_pose = valid_request().start_pose;
+  request.initial_direction_x = 3.0;
+  request.initial_direction_y = 4.0;
+  request.radius = 0.01;
+  request.cycle_duration = 4.0;
+  request.cycles = 3U;
+  request.sample_period = 0.1;
+  request.maximum_speed = 0.02;
+
+  const auto result = massage_motion::TechniquePathGenerator::generate_knead(request);
+  ASSERT_TRUE(result.success) << result.message;
+  EXPECT_EQ(result.path.type, massage_motion::TechniquePathType::kKnead);
+  ASSERT_EQ(result.path.points.size(), 121U);
+  const auto & first = result.path.points.front().pose;
+  const auto & last = result.path.points.back().pose;
+  EXPECT_NEAR(first.position.x, 0.406, 1.0e-12);
+  EXPECT_NEAR(first.position.y, -0.192, 1.0e-12);
+  EXPECT_NEAR(last.position.x, first.position.x, 1.0e-12);
+  EXPECT_NEAR(last.position.y, first.position.y, 1.0e-12);
+  for (const auto & point : result.path.points)
+  {
+    EXPECT_NEAR(point.pose.position.z, request.center_pose.pose.position.z, 1.0e-12);
+    EXPECT_NEAR(
+      std::hypot(
+        point.pose.position.x - request.center_pose.pose.position.x,
+        point.pose.position.y - request.center_pose.pose.position.y),
+      request.radius, 1.0e-12);
+  }
+}
+
+TEST(TechniquePathGeneratorTest, RejectsInvalidKneadGeometry)
+{
+  massage_motion::KneadPathRequest request;
+  request.center_pose = valid_request().start_pose;
+  request.radius = 0.01;
+  request.cycle_duration = 2.0;
+  request.cycles = 1U;
+  request.sample_period = 0.1;
+  request.maximum_speed = 0.1;
+  request.initial_direction_x = 0.0;
+  request.initial_direction_y = 0.0;
+  EXPECT_FALSE(
+    massage_motion::TechniquePathGenerator::generate_knead(request).success);
+}
+
+TEST(TechniquePathGeneratorTest, ReportsKneadSamplingValuesOnSpeedFailure)
+{
+  massage_motion::KneadPathRequest request;
+  request.center_pose = valid_request().start_pose;
+  request.radius = 0.01;
+  request.cycle_duration = 1.0;
+  request.cycles = 3U;
+  request.sample_period = 0.02;
+  request.maximum_speed = 0.01;
+
+  const auto result =
+    massage_motion::TechniquePathGenerator::generate_knead(request);
+
+  EXPECT_FALSE(result.success);
+  EXPECT_NE(result.message.find("duration="), std::string::npos);
+  EXPECT_NE(result.message.find("sample_period="), std::string::npos);
+  EXPECT_NE(result.message.find("nominal_speed="), std::string::npos);
+  EXPECT_NE(result.message.find("maximum_speed="), std::string::npos);
 }
 
 }  // namespace

@@ -139,9 +139,19 @@ JakaComplianceController::~JakaComplianceController()
     if (enable_may_be_active_.load())
     {
         std::string ignored;
-        set_enabled(false, ignored);
-        enable_may_be_active_.store(false);
+        if (set_enabled(false, ignored))
+        {
+            enable_may_be_active_.store(false);
+        }
     }
+}
+
+massage_motion::ComplianceCapabilities
+JakaComplianceController::capabilities() const
+{
+    // The cabinet manages force targets, but this driver has no verified
+    // trajectory-reference channel while admittance owns robot control.
+    return {false, true};
 }
 
 massage_motion::ComplianceResult JakaComplianceController::start(
@@ -557,6 +567,8 @@ massage_motion::ComplianceFeedback JakaComplianceController::feedback() const
     result.wrench = wrench_state.sample.values;
     result.wrench_stamp_nanoseconds =
         wrench_state.sample.stamp_nanoseconds;
+    result.joint_names.assign(
+        config_.joint_names.begin(), config_.joint_names.end());
     result.joint_positions = latest_joint_positions_;
     const double joint_age = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - latest_joint_state_time_).count();

@@ -92,9 +92,6 @@ def generate_launch_description():
                 "ik_duplicate_tolerance": float_parameter(
                     "ik_duplicate_tolerance"
                 ),
-                "technique_roll_degrees": float_parameter(
-                    "technique_roll_degrees"
-                ),
                 "velocity_scale": float_parameter("velocity_scale"),
                 "acceleration_scale": float_parameter("acceleration_scale"),
                 "planning_timeout": float_parameter("planning_timeout"),
@@ -161,9 +158,6 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "ik_duplicate_tolerance", default_value="0.0001"
-            ),
-            DeclareLaunchArgument(
-                "technique_roll_degrees", default_value="90.0"
             ),
             DeclareLaunchArgument("velocity_scale", default_value="0.02"),
             DeclareLaunchArgument(

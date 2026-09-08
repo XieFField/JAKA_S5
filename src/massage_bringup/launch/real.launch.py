@@ -34,16 +34,50 @@ def _validate_arguments(context):
         trajectory_goal_tolerance = float(
             LaunchConfiguration("trajectory_goal_tolerance").perform(context)
         )
+        trajectory_start_tolerance = float(
+            LaunchConfiguration("trajectory_start_tolerance").perform(context)
+        )
         trajectory_goal_timeout = float(
             LaunchConfiguration("trajectory_goal_timeout").perform(context)
         )
         trajectory_feedback_period = float(
             LaunchConfiguration("trajectory_feedback_period").perform(context)
         )
+        trajectory_status_period = float(
+            LaunchConfiguration("trajectory_status_period").perform(context)
+        )
+        sdk_joint_velocity_period = float(
+            LaunchConfiguration(
+                "trajectory_sdk_joint_velocity_period"
+            ).perform(context)
+        )
         servo_filter_cutoff = float(
             LaunchConfiguration(
                 "trajectory_servo_filter_cutoff_hz"
             ).perform(context)
+        )
+        servo_nlf_max_velocity = float(
+            LaunchConfiguration(
+                "trajectory_servo_nlf_max_velocity_deg_s"
+            ).perform(context)
+        )
+        servo_nlf_max_acceleration = float(
+            LaunchConfiguration(
+                "trajectory_servo_nlf_max_acceleration_deg_s2"
+            ).perform(context)
+        )
+        servo_nlf_max_jerk = float(
+            LaunchConfiguration(
+                "trajectory_servo_nlf_max_jerk_deg_s3"
+            ).perform(context)
+        )
+        servo_foresight_max_buffer = int(
+            LaunchConfiguration(
+                "trajectory_servo_foresight_max_buffer"
+            ).perform(context)
+        )
+        servo_foresight_kp = float(
+            LaunchConfiguration("trajectory_servo_foresight_kp").perform(context)
         )
         maximum_queue_starvation = float(
             LaunchConfiguration(
@@ -69,6 +103,11 @@ def _validate_arguments(context):
     ):
         raise RuntimeError("trajectory_goal_tolerance 必须为有限正数")
     if (
+        not math.isfinite(trajectory_start_tolerance)
+        or trajectory_start_tolerance <= 0.0
+    ):
+        raise RuntimeError("trajectory_start_tolerance 必须为有限正数")
+    if (
         not math.isfinite(trajectory_goal_timeout)
         or trajectory_goal_timeout <= 0.0
     ):
@@ -78,8 +117,45 @@ def _validate_arguments(context):
         or trajectory_feedback_period <= 0.0
     ):
         raise RuntimeError("trajectory_feedback_period 必须为有限正数")
+    if (
+        not math.isfinite(trajectory_status_period)
+        or trajectory_status_period <= 0.0
+    ):
+        raise RuntimeError("trajectory_status_period 必须为有限正数")
+    if (
+        not math.isfinite(sdk_joint_velocity_period)
+        or sdk_joint_velocity_period <= 0.0
+    ):
+        raise RuntimeError(
+            "trajectory_sdk_joint_velocity_period 必须为有限正数"
+        )
     if not math.isfinite(servo_filter_cutoff) or servo_filter_cutoff < 0.0:
         raise RuntimeError("trajectory_servo_filter_cutoff_hz 不能为负数")
+    servo_filter_mode = LaunchConfiguration(
+        "trajectory_servo_filter_mode"
+    ).perform(context)
+    if servo_filter_mode not in ("none", "joint_lpf", "joint_nlf", "foresight"):
+        raise RuntimeError(
+            "trajectory_servo_filter_mode 仅允许 none、joint_lpf、"
+            "joint_nlf 或 foresight"
+        )
+    if servo_filter_mode == "joint_lpf" and servo_filter_cutoff <= 0.0:
+        raise RuntimeError("joint_lpf 模式必须提供正数 cutoff frequency")
+    nlf_limits = (
+        servo_nlf_max_velocity,
+        servo_nlf_max_acceleration,
+        servo_nlf_max_jerk,
+    )
+    if any(not math.isfinite(value) for value in nlf_limits):
+        raise RuntimeError("joint_nlf 的速度、加速度和 jerk 参数必须为有限数")
+    if servo_filter_mode == "joint_nlf" and any(
+        value <= 0.0 for value in nlf_limits
+    ):
+        raise RuntimeError("joint_nlf 模式必须显式提供正数速度、加速度和 jerk 上限")
+    if not 3 <= servo_foresight_max_buffer <= 100:
+        raise RuntimeError("trajectory_servo_foresight_max_buffer 必须在 [3, 100] 内")
+    if not math.isfinite(servo_foresight_kp) or servo_foresight_kp <= 0.0:
+        raise RuntimeError("trajectory_servo_foresight_kp 必须为有限正数")
     if (
         not math.isfinite(maximum_queue_starvation)
         or maximum_queue_starvation < 0.0
@@ -237,6 +313,9 @@ def generate_launch_description():
             "trajectory_goal_tolerance": ParameterValue(
                 LaunchConfiguration("trajectory_goal_tolerance"), value_type=float
             ),
+            "trajectory_start_tolerance": ParameterValue(
+                LaunchConfiguration("trajectory_start_tolerance"), value_type=float
+            ),
             "trajectory_goal_timeout": ParameterValue(
                 LaunchConfiguration("trajectory_goal_timeout"), value_type=float
             ),
@@ -250,9 +329,48 @@ def generate_launch_description():
             "trajectory_feedback_period": ParameterValue(
                 LaunchConfiguration("trajectory_feedback_period"), value_type=float
             ),
+            "trajectory_status_period": ParameterValue(
+                LaunchConfiguration("trajectory_status_period"), value_type=float
+            ),
+            "trajectory_capture_sdk_joint_velocity": ParameterValue(
+                LaunchConfiguration("trajectory_capture_sdk_joint_velocity"),
+                value_type=bool,
+            ),
+            "trajectory_sdk_joint_velocity_period": ParameterValue(
+                LaunchConfiguration("trajectory_sdk_joint_velocity_period"),
+                value_type=float,
+            ),
             "trajectory_servo_filter_cutoff_hz": ParameterValue(
                 LaunchConfiguration("trajectory_servo_filter_cutoff_hz"),
                 value_type=float,
+            ),
+            "trajectory_servo_filter_mode": LaunchConfiguration(
+                "trajectory_servo_filter_mode"
+            ),
+            "trajectory_servo_nlf_max_velocity_deg_s": ParameterValue(
+                LaunchConfiguration("trajectory_servo_nlf_max_velocity_deg_s"),
+                value_type=float,
+            ),
+            "trajectory_servo_nlf_max_acceleration_deg_s2": ParameterValue(
+                LaunchConfiguration(
+                    "trajectory_servo_nlf_max_acceleration_deg_s2"
+                ),
+                value_type=float,
+            ),
+            "trajectory_servo_nlf_max_jerk_deg_s3": ParameterValue(
+                LaunchConfiguration("trajectory_servo_nlf_max_jerk_deg_s3"),
+                value_type=float,
+            ),
+            "trajectory_servo_foresight_max_buffer": ParameterValue(
+                LaunchConfiguration("trajectory_servo_foresight_max_buffer"),
+                value_type=int,
+            ),
+            "trajectory_servo_foresight_kp": ParameterValue(
+                LaunchConfiguration("trajectory_servo_foresight_kp"),
+                value_type=float,
+            ),
+            "trajectory_error_code_file_path": LaunchConfiguration(
+                "trajectory_error_code_file_path"
             ),
             "trajectory_maximum_queue_starvation": ParameterValue(
                 LaunchConfiguration("trajectory_maximum_queue_starvation"),
@@ -315,6 +433,7 @@ def generate_launch_description():
             "endpoint_tolerance": LaunchConfiguration(
                 "home_endpoint_tolerance"
             ),
+            "real_ptp_backend": LaunchConfiguration("real_ptp_backend"),
             "output_csv": LaunchConfiguration("home_output_csv"),
         }.items(),
         condition=IfCondition(auto_home),
@@ -330,6 +449,9 @@ def generate_launch_description():
         DeclareLaunchArgument("start_move_group", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("auto_home", default_value="false"),
+        DeclareLaunchArgument(
+            "real_ptp_backend", default_value="native_joint_move"
+        ),
         DeclareLaunchArgument("auto_home_confirmed", default_value="false"),
         DeclareLaunchArgument("home_planning_attempts", default_value="3"),
         DeclareLaunchArgument("home_velocity_scale", default_value="0.02"),
@@ -347,14 +469,43 @@ def generate_launch_description():
         DeclareLaunchArgument("ft_frame_id", default_value="Link_06"),
         DeclareLaunchArgument("ft_data_type", default_value="3"),
         DeclareLaunchArgument("trajectory_goal_tolerance", default_value="0.002"),
+        DeclareLaunchArgument("trajectory_start_tolerance", default_value="0.01"),
         DeclareLaunchArgument("trajectory_goal_timeout", default_value="15.0"),
         DeclareLaunchArgument(
             "trajectory_maximum_servo_step_num", default_value="50"
         ),
         DeclareLaunchArgument("maximum_servo_samples", default_value="50000"),
-        DeclareLaunchArgument("trajectory_feedback_period", default_value="0.1"),
+        DeclareLaunchArgument("trajectory_feedback_period", default_value="0.02"),
+        DeclareLaunchArgument("trajectory_status_period", default_value="0.05"),
+        DeclareLaunchArgument(
+            "trajectory_capture_sdk_joint_velocity", default_value="false"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_sdk_joint_velocity_period", default_value="1.0"
+        ),
         DeclareLaunchArgument(
             "trajectory_servo_filter_cutoff_hz", default_value="0.5"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_servo_filter_mode", default_value="joint_lpf"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_servo_nlf_max_velocity_deg_s", default_value="0.0"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_servo_nlf_max_acceleration_deg_s2", default_value="0.0"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_servo_nlf_max_jerk_deg_s3", default_value="0.0"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_servo_foresight_max_buffer", default_value="15"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_servo_foresight_kp", default_value="0.03"
+        ),
+        DeclareLaunchArgument(
+            "trajectory_error_code_file_path", default_value=""
         ),
         DeclareLaunchArgument(
             "trajectory_maximum_queue_starvation", default_value="0.008"

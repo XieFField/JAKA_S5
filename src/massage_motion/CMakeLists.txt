@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME}
   src/motion_planning_sdk.cpp
   src/competitive_motion_planner.cpp
   src/pose_ik_candidate_generator.cpp
+  src/pose_ik_competitive_planner.cpp
   src/link_trajectory_geometry.cpp
   src/elbow_posture_geometry.cpp
   src/progressive_joint_checkpoints.cpp
@@ -44,16 +45,20 @@ add_library(${PROJECT_NAME}
   src/execution_validation.cpp
   src/execution_timing.cpp
   src/trajectory_execution_contract.cpp
+  src/native_ptp_contract.cpp
   src/moveit_trajectory_executor.cpp
+  src/hybrid_trajectory_executor.cpp
   src/guarded_trajectory_executor.cpp
   src/joint_target_interpolation.cpp
   src/trajectory_endpoint_error.cpp
   src/relative_joint_target.cpp
   src/motion_repeatability.cpp
   src/technique_path_generator.cpp
+  src/tool_orientation.cpp
   src/single_axis_admittance.cpp
   src/wrench_observation.cpp
   src/wrench_processor.cpp
+  src/wrench_frame_transform.cpp
   src/wrench_subscriber.cpp
   src/compliance_validation.cpp
   src/ros2_control_compliance_controller.cpp
@@ -78,6 +83,8 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp_action
   sensor_msgs
   std_msgs
+  tf2
+  tf2_ros
   trajectory_msgs
 )
 
@@ -115,6 +122,12 @@ add_massage_motion_demo(
   geometry_msgs
   std_srvs
 )
+add_massage_motion_demo(
+  wrench_frame_transformer
+  geometry_msgs
+  tf2
+  tf2_ros
+)
 
 # 安装并导出公共头文件和库目标，使其他 ament 包可以通过
 # find_package(massage_motion) 使用本库。
@@ -143,6 +156,8 @@ ament_export_dependencies(
   moveit_ros_planning_interface
   sensor_msgs
   std_msgs
+  tf2
+  tf2_ros
   trajectory_msgs
 )
 
@@ -184,6 +199,16 @@ if(BUILD_TESTING)
     ${PROJECT_NAME}
   )
 
+  ament_add_gtest(native_ptp_contract_test
+    test/native_ptp_contract_test.cpp
+  )
+  target_link_libraries(native_ptp_contract_test ${PROJECT_NAME})
+
+  ament_add_gtest(hybrid_trajectory_executor_test
+    test/hybrid_trajectory_executor_test.cpp
+  )
+  target_link_libraries(hybrid_trajectory_executor_test ${PROJECT_NAME})
+
   ament_add_gtest(trajectory_endpoint_error_test
     test/trajectory_endpoint_error_test.cpp
   )
@@ -205,6 +230,14 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(wrench_processor_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(wrench_frame_transform_test
+    test/wrench_frame_transform_test.cpp
+  )
+
+  target_link_libraries(wrench_frame_transform_test
     ${PROJECT_NAME}
   )
 
@@ -264,6 +297,19 @@ if(BUILD_TESTING)
     ${PROJECT_NAME}
   )
 
+  ament_add_gtest(tool_orientation_test
+    test/tool_orientation_test.cpp
+  )
+
+  target_link_libraries(tool_orientation_test
+    ${PROJECT_NAME}
+  )
+
+  ament_target_dependencies(tool_orientation_test
+    srdfdom
+    urdf
+  )
+
   ament_add_gtest(competitive_motion_planner_test
     test/competitive_motion_planner_test.cpp
   )
@@ -277,6 +323,14 @@ if(BUILD_TESTING)
   )
 
   target_link_libraries(pose_ik_candidate_generator_test
+    ${PROJECT_NAME}
+  )
+
+  ament_add_gtest(pose_ik_competitive_planner_test
+    test/pose_ik_competitive_planner_test.cpp
+  )
+
+  target_link_libraries(pose_ik_competitive_planner_test
     ${PROJECT_NAME}
   )
 
@@ -346,6 +400,7 @@ install(
     compliance_backend_demo
     push_pose_tuner
     push_pose_tuner_keyboard
+    wrench_frame_transformer
   DESTINATION lib/${PROJECT_NAME}
 )
 

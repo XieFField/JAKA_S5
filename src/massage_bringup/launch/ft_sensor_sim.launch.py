@@ -1,18 +1,56 @@
 import os
+import signal
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    LogInfo,
     RegisterEventHandler,
+    SetEnvironmentVariable,
     TimerAction,
 )
-from launch.event_handlers import OnProcessExit
+from launch.event_handlers import OnProcessExit, OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def stop_partitioned_gazebo(event, context):
+    del event
+    partition = LaunchConfiguration("gazebo_partition").perform(context)
+    stopped = []
+    proc_root = "/proc"
+    for entry in os.scandir(proc_root):
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        try:
+            with open(
+                os.path.join(proc_root, entry.name, "environ"), "rb"
+            ) as stream:
+                environment = stream.read().split(b"\0")
+            expected = {
+                f"IGN_PARTITION={partition}".encode(),
+                f"GZ_PARTITION={partition}".encode(),
+            }
+            if expected.isdisjoint(environment):
+                continue
+            with open(
+                os.path.join(proc_root, entry.name, "cmdline"), "rb"
+            ) as stream:
+                command = stream.read().replace(b"\0", b" ")
+            if b"ign gazebo" not in command and b"gz sim" not in command:
+                continue
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+    return [LogInfo(msg=(
+        f"Gazebo partition cleanup: partition={partition}, pids={stopped}"
+    ))]
 
 
 def generate_launch_description():
@@ -20,6 +58,7 @@ def generate_launch_description():
     initial_positions_file = LaunchConfiguration("initial_positions_file")
     world_file = LaunchConfiguration("world_file")
     gazebo_extra_args = LaunchConfiguration("gazebo_extra_args")
+    gazebo_partition = LaunchConfiguration("gazebo_partition")
 
     description_share = get_package_share_directory("massage_description")
     robot_xacro = os.path.join(
@@ -162,6 +201,14 @@ def generate_launch_description():
             default_value="",
             description="Additional Ignition Gazebo arguments, such as -s",
         ),
+        DeclareLaunchArgument(
+            "gazebo_partition",
+            default_value=f"massage_sim_{os.getpid()}",
+            description="Per-launch Gazebo transport partition",
+        ),
+        SetEnvironmentVariable("IGN_PARTITION", gazebo_partition),
+        SetEnvironmentVariable("GZ_PARTITION", gazebo_partition),
+        RegisterEventHandler(OnShutdown(on_shutdown=stop_partitioned_gazebo)),
         gazebo,
         robot_state_publisher,
         clock_bridge,

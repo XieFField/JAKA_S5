@@ -71,6 +71,10 @@ TEST(MinimalTaskStateMachineTest, PlanningAndExecutionSuccess)
     massage_task::TaskRequest request;
     request.task_id = "success_test";
     request.execution_timing.margin = 4.0;
+    request.motion_request.motion_type = massage_motion::MotionType::kPtp;
+    request.motion_request.velocity_scale = 0.2;
+    request.motion_request.acceleration_scale = 0.3;
+    planner->next_result.planner_id = "PTP";
 
     const auto result = machine.run(request);
 
@@ -83,6 +87,12 @@ TEST(MinimalTaskStateMachineTest, PlanningAndExecutionSuccess)
     EXPECT_EQ(executor->execute_call_count, 1);
     EXPECT_EQ(executor->last_request.request_id, request.task_id);
     EXPECT_DOUBLE_EQ(executor->last_request.timeout, 5.0);
+    EXPECT_TRUE(executor->last_request.has_motion_semantics);
+    EXPECT_EQ(
+        executor->last_request.motion_type, massage_motion::MotionType::kPtp);
+    EXPECT_DOUBLE_EQ(executor->last_request.velocity_scale, 0.2);
+    EXPECT_DOUBLE_EQ(executor->last_request.acceleration_scale, 0.3);
+    EXPECT_EQ(executor->last_request.planner_id, "PTP");
 }
 
 TEST(MinimalTaskStateMachineTest, PlanningFailure)

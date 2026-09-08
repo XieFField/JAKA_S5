@@ -18,9 +18,6 @@
 #include "moveit/robot_model_loader/robot_model_loader.h"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
-#include "tf2/LinearMath/Matrix3x3.h"
-#include "tf2/LinearMath/Quaternion.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "yaml-cpp/yaml.h"
 
 #include "massage_bringup/default_targets.hpp"
@@ -29,7 +26,9 @@
 #include "massage_motion/link_trajectory_geometry.hpp"
 #include "massage_motion/motion_planning_sdk.hpp"
 #include "massage_motion/pose_ik_candidate_generator.hpp"
+#include "massage_motion/progressive_joint_checkpoints.hpp"
 #include "massage_motion/technique_path_generator.hpp"
+#include "massage_motion/tool_orientation.hpp"
 #ifndef MASSAGE_PLAN_ONLY_BUILD
 #include "massage_motion/cartesian_path_verification.hpp"
 #include "massage_motion/execution_timing.hpp"
@@ -94,15 +93,10 @@ PushTestProfile load_profile(const std::string & path)
   PushTestProfile profile;
   const auto start = root["pre_contact_pose"];
   const auto position = start["position"];
-  const auto orientation = start["orientation"];
   profile.start_pose.header.frame_id = start["reference_frame"].as<std::string>();
   profile.start_pose.pose.position.x = required_double(position, "x");
   profile.start_pose.pose.position.y = required_double(position, "y");
   profile.start_pose.pose.position.z = required_double(position, "z");
-  profile.start_pose.pose.orientation.x = required_double(orientation, "x");
-  profile.start_pose.pose.orientation.y = required_double(orientation, "y");
-  profile.start_pose.pose.orientation.z = required_double(orientation, "z");
-  profile.start_pose.pose.orientation.w = required_double(orientation, "w");
 
   const auto test = root["free_space_push_test"];
   const auto direction = test["direction_xy"];
@@ -131,26 +125,6 @@ PushTestProfile load_profile(const std::string & path)
   return profile;
 }
 
-void apply_absolute_roll(
-  geometry_msgs::msg::Pose & pose, double roll_degrees)
-{
-  tf2::Quaternion current;
-  tf2::fromMsg(pose.orientation, current);
-  if (!std::isfinite(current.length2()) || current.length2() <= 1.0e-12)
-  {
-    throw std::runtime_error("测试起点包含无效四元数");
-  }
-  current.normalize();
-  double roll = 0.0;
-  double pitch = 0.0;
-  double yaw = 0.0;
-  tf2::Matrix3x3(current).getRPY(roll, pitch, yaw);
-  tf2::Quaternion technique_orientation;
-  technique_orientation.setRPY(roll_degrees * kPi / 180.0, pitch, yaw);
-  technique_orientation.normalize();
-  pose.orientation = tf2::toMsg(technique_orientation);
-}
-
 moveit_msgs::msg::RobotState terminal_state(
   const moveit_msgs::msg::RobotTrajectory & trajectory)
 {
@@ -166,6 +140,74 @@ moveit_msgs::msg::RobotState terminal_state(
   state.joint_state.position = joint_trajectory.points.back().positions;
   state.is_diff = true;
   return state;
+}
+
+moveit_msgs::msg::RobotState joint_target_state(
+  const std::vector<std::string> & joint_names,
+  const std::vector<double> & positions)
+{
+  if (joint_names.empty() || joint_names.size() != positions.size() ||
+    !std::all_of(
+      positions.begin(), positions.end(),
+      [](double value) {return std::isfinite(value);}))
+  {
+    throw std::runtime_error("无法从关节目标构造规划起点");
+  }
+  moveit_msgs::msg::RobotState state;
+  state.joint_state.name = joint_names;
+  state.joint_state.position = positions;
+  state.is_diff = true;
+  return state;
+}
+
+double maximum_position_difference(
+  const std::vector<double> & first, const std::vector<double> & second)
+{
+  if (first.empty() || first.size() != second.size())
+  {
+    return std::numeric_limits<double>::infinity();
+  }
+  double maximum = 0.0;
+  for (std::size_t index = 0; index < first.size(); ++index)
+  {
+    maximum = std::max(maximum, std::abs(second[index] - first[index]));
+  }
+  return maximum;
+}
+
+std::vector<double> parse_fraction_sequence(const std::string & text)
+{
+  const YAML::Node fractions = YAML::Load(text);
+  if (!fractions.IsSequence())
+  {
+    throw std::runtime_error(
+      "progressive_checkpoint_fractions 必须是 YAML 数组");
+  }
+  std::vector<double> result;
+  result.reserve(fractions.size());
+  for (const auto & fraction : fractions)
+  {
+    const double value = fraction.as<double>();
+    if (!std::isfinite(value))
+    {
+      throw std::runtime_error("渐进检查点比例包含非有限数值");
+    }
+    result.push_back(value);
+  }
+  return result;
+}
+
+int signed_side(double value, double tolerance)
+{
+  if (value > tolerance)
+  {
+    return 1;
+  }
+  if (value < -tolerance)
+  {
+    return -1;
+  }
+  return 0;
 }
 
 void log_ik_report(
@@ -500,7 +542,6 @@ int main(int argc, char ** argv)
   double ik_maximum_timeout = 0.50;
   double ik_failure_backoff_factor = 1.35;
   double ik_duplicate_tolerance = 1.0e-4;
-  double technique_roll_degrees = 90.0;
   double velocity_scale = 0.05;
   double acceleration_scale = 0.05;
   double planning_timeout = 5.0;
@@ -516,7 +557,13 @@ int main(int argc, char ** argv)
   std::string shoulder_link_name = "Link_02";
   std::string elbow_link_name = "Link_03";
   std::string wrist_link_name = "Link_04";
+  std::string workflow_mode = "full_push";
   std::string test_mode = "normal";
+  std::string progressive_checkpoint_fractions = "[0.10, 0.25, 0.50, 1.00]";
+  int progressive_maximum_checkpoint_count = 64;
+  double progressive_maximum_segment_joint_travel = 0.30;
+  double progressive_joint_continuity_tolerance = 1.0e-6;
+  double progressive_minimum_direction_observability = 0.10;
   double cartesian_position_tolerance = 0.005;
   double cartesian_orientation_tolerance = 0.03;
   double maximum_lin_transverse_error = 0.005;
@@ -549,8 +596,6 @@ int main(int argc, char ** argv)
     "ik_failure_backoff_factor", ik_failure_backoff_factor, 1.35);
   node->get_parameter_or(
     "ik_duplicate_tolerance", ik_duplicate_tolerance, 1.0e-4);
-  node->get_parameter_or(
-    "technique_roll_degrees", technique_roll_degrees, 90.0);
   node->get_parameter_or("velocity_scale", velocity_scale, 0.05);
   node->get_parameter_or("acceleration_scale", acceleration_scale, 0.05);
   node->get_parameter_or("planning_timeout", planning_timeout, 5.0);
@@ -577,7 +622,24 @@ int main(int argc, char ** argv)
     "elbow_link_name", elbow_link_name, std::string{"Link_03"});
   node->get_parameter_or(
     "wrist_link_name", wrist_link_name, std::string{"Link_04"});
+  node->get_parameter_or(
+    "workflow_mode", workflow_mode, std::string{"full_push"});
   node->get_parameter_or("test_mode", test_mode, std::string{"normal"});
+  node->get_parameter_or(
+    "progressive_checkpoint_fractions", progressive_checkpoint_fractions,
+    std::string{"[0.10, 0.25, 0.50, 1.00]"});
+  node->get_parameter_or(
+    "progressive_maximum_checkpoint_count",
+    progressive_maximum_checkpoint_count, 64);
+  node->get_parameter_or(
+    "progressive_maximum_segment_joint_travel",
+    progressive_maximum_segment_joint_travel, 0.30);
+  node->get_parameter_or(
+    "progressive_joint_continuity_tolerance",
+    progressive_joint_continuity_tolerance, 1.0e-6);
+  node->get_parameter_or(
+    "progressive_minimum_direction_observability",
+    progressive_minimum_direction_observability, 0.10);
   node->get_parameter_or(
     "cartesian_position_tolerance", cartesian_position_tolerance, 0.005);
   node->get_parameter_or(
@@ -605,7 +667,23 @@ int main(int argc, char ** argv)
   ik_timeout_policy.minimum_timeout = ik_minimum_timeout;
   ik_timeout_policy.maximum_timeout = ik_maximum_timeout;
   ik_timeout_policy.failure_backoff_factor = ik_failure_backoff_factor;
+  std::vector<double> parsed_progressive_fractions;
+  try
+  {
+    parsed_progressive_fractions = parse_fraction_sequence(
+      progressive_checkpoint_fractions);
+  }
+  catch (const std::exception &)
+  {
+    parsed_progressive_fractions.clear();
+  }
   const bool real_plan_only = execution_environment == "real_plan_only";
+  const bool progressive_workflow = workflow_mode == "progressive_ptp";
+  const bool supported_test_mode =
+    (workflow_mode == "full_push" &&
+    (test_mode == "normal" || test_mode == "reject_after_ptp")) ||
+    (progressive_workflow &&
+    (test_mode == "normal" || test_mode == "reject_before_first_segment"));
   if (config_file.empty() ||
     (execution_environment != "simulation" && !real_plan_only) ||
     (real_plan_only && !parameters_confirmed) ||
@@ -616,8 +694,6 @@ int main(int argc, char ** argv)
     ik_random_seed < 0 ||
     !massage_motion::valid_ik_timeout_policy(ik_timeout_policy) ||
     !std::isfinite(ik_duplicate_tolerance) || ik_duplicate_tolerance <= 0.0 ||
-    !std::isfinite(technique_roll_degrees) ||
-    std::abs(technique_roll_degrees) > 180.0 ||
     !std::isfinite(velocity_scale) || velocity_scale <= 0.0 ||
     velocity_scale > 1.0 || !std::isfinite(acceleration_scale) ||
     acceleration_scale <= 0.0 || acceleration_scale > 1.0 ||
@@ -633,8 +709,19 @@ int main(int argc, char ** argv)
     (shoulder_link_name.empty() || elbow_link_name.empty() ||
     wrist_link_name.empty())) ||
     (execute && !link_height_gate_enabled) ||
-    (test_mode != "normal" && test_mode != "reject_after_ptp") ||
+    (workflow_mode != "full_push" && !progressive_workflow) ||
+    !supported_test_mode ||
     (!execute && test_mode != "normal") ||
+    (progressive_workflow &&
+    (!link_height_gate_enabled || !elbow_posture_diagnostics_enabled)) ||
+    parsed_progressive_fractions.empty() ||
+    progressive_maximum_checkpoint_count <= 0 ||
+    !std::isfinite(progressive_maximum_segment_joint_travel) ||
+    progressive_maximum_segment_joint_travel <= 0.0 ||
+    !std::isfinite(progressive_joint_continuity_tolerance) ||
+    progressive_joint_continuity_tolerance < 0.0 ||
+    !std::isfinite(progressive_minimum_direction_observability) ||
+    progressive_minimum_direction_observability < 0.0 ||
     !std::isfinite(cartesian_position_tolerance) ||
     cartesian_position_tolerance <= 0.0 ||
     !std::isfinite(cartesian_orientation_tolerance) ||
@@ -651,9 +738,10 @@ int main(int argc, char ** argv)
     RCLCPP_ERROR(
       node->get_logger(),
       "推轨迹参数或执行权限无效: environment=%s, confirmed=%s, "
-      "execute_requested=%s, execution_backend_compiled=%s",
+      "workflow=%s, test_mode=%s, execute_requested=%s, "
+      "execution_backend_compiled=%s",
       execution_environment.c_str(), parameters_confirmed ? "true" : "false",
-      execute ? "true" : "false",
+      workflow_mode.c_str(), test_mode.c_str(), execute ? "true" : "false",
       kExecutionBackendCompiled ? "true" : "false");
     rclcpp::shutdown();
     return 2;
@@ -662,9 +750,10 @@ int main(int argc, char ** argv)
   RCLCPP_INFO(
     node->get_logger(),
     "推轨迹执行权限门禁: environment=%s, parameters_confirmed=%s, "
-    "execute_requested=%s, execution_backend_compiled=%s",
+    "workflow=%s, test_mode=%s, execute_requested=%s, "
+    "execution_backend_compiled=%s",
     execution_environment.c_str(), parameters_confirmed ? "true" : "false",
-    execute ? "true" : "false",
+    workflow_mode.c_str(), test_mode.c_str(), execute ? "true" : "false",
     kExecutionBackendCompiled ? "true" : "false");
 
   std::mutex state_mutex;
@@ -714,7 +803,19 @@ int main(int argc, char ** argv)
     elbow_posture_config.elbow_link = elbow_link_name;
     elbow_posture_config.wrist_link = wrist_link_name;
     elbow_posture_config.surface_normal = profile.surface_normal;
-    apply_absolute_roll(profile.start_pose.pose, technique_roll_degrees);
+    massage_motion::ToolOrientationRequest orientation_request;
+    orientation_request.surface_normal_world = profile.surface_normal;
+    orientation_request.tangent_direction_world = {
+      profile.direction_x, profile.direction_y, 0.0};
+    const auto tool_orientation =
+      massage_motion::make_surface_aligned_tool_orientation(orientation_request);
+    if (!tool_orientation.valid)
+    {
+      throw std::runtime_error(
+              "无法从表面法向和推行切向构造工具姿态: " +
+              tool_orientation.message);
+    }
+    profile.start_pose.pose.orientation = tool_orientation.orientation;
     profile.start_pose.header.stamp = node->now();
 
     massage_motion::PushPathRequest path_request;
@@ -746,12 +847,16 @@ int main(int argc, char ** argv)
       node->get_logger(),
       "Stage B 配置已验证: execute=%s, start=[%.9f %.9f %.9f] m, "
       "direction_xy=[%.6f %.6f], length=%.3f m, end=[%.9f %.9f %.9f] m, "
-      "roll=%.3f deg；FT/柔顺/接触逻辑均未启用",
+      "tool_z_world=[%.6f %.6f %.6f], tool_x_world=[%.6f %.6f %.6f]；"
+      "FT/柔顺/接触逻辑均未启用",
       execute ? "true" : "false", profile.start_pose.pose.position.x,
       profile.start_pose.pose.position.y, profile.start_pose.pose.position.z,
       profile.direction_x, profile.direction_y, profile.length,
       endpoint_pose.position.x, endpoint_pose.position.y,
-      endpoint_pose.position.z, technique_roll_degrees);
+      endpoint_pose.position.z, tool_orientation.tool_z_world[0],
+      tool_orientation.tool_z_world[1], tool_orientation.tool_z_world[2],
+      tool_orientation.tool_x_world[0], tool_orientation.tool_x_world[1],
+      tool_orientation.tool_x_world[2]);
     RCLCPP_INFO(
       node->get_logger(),
       "Stage C-B 执行验收配置: test_mode=%s, joint_tolerance=%.6f rad, "
@@ -1020,6 +1125,315 @@ int main(int argc, char ** argv)
         selected_goal[joint_index]);
     }
 
+    if (progressive_workflow)
+    {
+      massage_motion::ProgressiveJointCheckpointConfig checkpoint_config;
+      checkpoint_config.required_fractions = parsed_progressive_fractions;
+      checkpoint_config.maximum_joint_step =
+        progressive_maximum_segment_joint_travel;
+      checkpoint_config.maximum_checkpoint_count =
+        static_cast<std::size_t>(progressive_maximum_checkpoint_count);
+      const auto checkpoints =
+        massage_motion::generate_progressive_joint_checkpoints(
+        ptp_plan.trajectory, checkpoint_config);
+      if (!checkpoints.valid || checkpoints.checkpoints.empty())
+      {
+        throw std::runtime_error(
+          "渐进 PTP 检查点生成失败: " + checkpoints.message);
+      }
+      RCLCPP_INFO(
+        node->get_logger(),
+        "渐进 PTP 检查点汇总: count=%zu, required=%zu, "
+        "joint_path=%.9f rad, maximum_generated_step=%.9f rad, limit=%.9f rad",
+        checkpoints.checkpoints.size(), parsed_progressive_fractions.size(),
+        checkpoints.joint_path_length,
+        checkpoints.maximum_generated_joint_step,
+        progressive_maximum_segment_joint_travel);
+      for (std::size_t index = 0; index < checkpoints.checkpoints.size(); ++index)
+      {
+        const auto & checkpoint = checkpoints.checkpoints[index];
+        RCLCPP_INFO(
+          node->get_logger(),
+          "渐进检查点[%zu]: fraction=%.6f, required=%s, source_segment=%zu, "
+          "source_time=%.6f s, max_joint_step=%.9f rad",
+          index, checkpoint.fraction, checkpoint.required ? "true" : "false",
+          checkpoint.source_segment_index, checkpoint.source_time,
+          checkpoint.maximum_joint_step_from_previous);
+      }
+
+      massage_motion::PlanCompetitionConfig segment_competition_config;
+      segment_competition_config.maximum_joint_travel =
+        progressive_maximum_segment_joint_travel;
+      const int reference_elbow_side = signed_side(
+        selected_ptp_elbow_metrics.start_signed_offset,
+        elbow_posture_config.side_tolerance);
+      std::vector<massage_motion::PlanResult> segment_plans;
+      segment_plans.reserve(checkpoints.checkpoints.size());
+      std::vector<double> previous_target = checkpoints.start_positions;
+
+      const auto validate_progressive_plan =
+        [&](const std::string & phase,
+          const massage_motion::PlanResult & plan,
+          const std::vector<double> & expected_start,
+          const std::vector<double> & expected_end)
+        {
+          const auto & trajectory = plan.trajectory.joint_trajectory;
+          if (trajectory.joint_names != checkpoints.joint_names ||
+            trajectory.points.empty())
+          {
+            throw std::runtime_error(
+              phase + " 轨迹关节顺序变化或轨迹为空");
+          }
+          const double start_error = maximum_position_difference(
+            trajectory.points.front().positions, expected_start);
+          const double end_error = maximum_position_difference(
+            trajectory.points.back().positions, expected_end);
+          if (start_error > progressive_joint_continuity_tolerance ||
+            end_error > progressive_joint_continuity_tolerance)
+          {
+            std::ostringstream message;
+            message << phase << " 关节连续性失败: start_error=" << start_error
+                    << " rad, end_error=" << end_error << " rad, tolerance="
+                    << progressive_joint_continuity_tolerance << " rad";
+            throw std::runtime_error(message.str());
+          }
+          const auto trajectory_metrics =
+            massage_motion::calculate_trajectory_metrics(plan.trajectory);
+          if (!trajectory_metrics.valid ||
+            trajectory_metrics.maximum_joint_travel >
+            progressive_maximum_segment_joint_travel + 1.0e-12)
+          {
+            throw std::runtime_error(
+              phase + " 超过渐进分段最大单关节行程");
+          }
+          const auto height_metrics =
+            massage_motion::calculate_link_height_metrics(
+            robot_model, plan.trajectory, diagnostic_link_name);
+          const auto height_gate = massage_motion::evaluate_link_height_gate(
+            height_metrics, link_height_gate_config);
+          if (!height_gate.accepted)
+          {
+            throw std::runtime_error(
+              phase + " Link_03 高度门禁失败: " + height_gate.message);
+          }
+          const auto elbow_metrics =
+            massage_motion::calculate_elbow_posture_metrics(
+            robot_model, plan.trajectory, elbow_posture_config);
+          log_elbow_posture_metrics(
+            node->get_logger(), phase, elbow_metrics, elbow_posture_config);
+          if (!elbow_metrics.valid)
+          {
+            throw std::runtime_error(
+              phase + " 肘部构型诊断失败: " + elbow_metrics.message);
+          }
+          const bool direction_observable =
+            elbow_metrics.minimum_direction_observability >=
+            progressive_minimum_direction_observability;
+          if (direction_observable)
+          {
+            const int start_side = signed_side(
+              elbow_metrics.start_signed_offset,
+              elbow_posture_config.side_tolerance);
+            const int end_side = signed_side(
+              elbow_metrics.end_signed_offset,
+              elbow_posture_config.side_tolerance);
+            if (reference_elbow_side == 0 || start_side != reference_elbow_side ||
+              end_side != reference_elbow_side ||
+              elbow_metrics.side_change_count != 0U)
+            {
+              throw std::runtime_error(
+                phase + " 可观测区间发生肘侧改变或参考肘侧不明确");
+            }
+          }
+          RCLCPP_INFO(
+            node->get_logger(),
+            "%s 渐进门禁: ACCEPTED: joint_start_error=%.9f rad, "
+            "joint_end_error=%.9f rad, maximum_joint_travel=%.9f rad, "
+            "link_min_z=%.6f m, elbow_reference_side=%d, "
+            "minimum_observability=%.6f, posture_policy=%s",
+            phase.c_str(), start_error, end_error,
+            trajectory_metrics.maximum_joint_travel,
+            height_metrics.minimum_z, reference_elbow_side,
+            elbow_metrics.minimum_direction_observability,
+            direction_observable ? "elbow_side" : "joint_continuity_fallback");
+        };
+
+      for (std::size_t index = 0; index < checkpoints.checkpoints.size(); ++index)
+      {
+        const auto & checkpoint = checkpoints.checkpoints[index];
+        massage_motion::MotionRequest segment_request;
+        segment_request.request_id = "push_progressive_segment_" +
+          std::to_string(index + 1U);
+        segment_request.motion_type = massage_motion::MotionType::kPtp;
+        segment_request.target = massage_motion::JointTarget{checkpoint.positions};
+        segment_request.velocity_scale = velocity_scale;
+        segment_request.acceleration_scale = acceleration_scale;
+        segment_request.planning_timeout = planning_timeout;
+        segment_request.start_state = joint_target_state(
+          checkpoints.joint_names, previous_target);
+        massage_motion::CompetitiveMotionPlanner segment_planner(
+          std::vector<massage_motion::PlanningSource>{
+            {"motion_sdk", sdk, static_cast<std::size_t>(
+                ptp_planning_attempts_per_candidate)}},
+          segment_competition_config);
+        const auto segment_plan = segment_planner.plan(segment_request);
+        const std::string phase = "PROGRESSIVE PTP segment[" +
+          std::to_string(index) + "]";
+        log_competition(
+          node->get_logger(), phase, segment_planner.last_report(),
+          progressive_maximum_segment_joint_travel, robot_model);
+        if (!segment_plan.success)
+        {
+          throw std::runtime_error(
+            phase + " 重新规划失败: " + segment_plan.message);
+        }
+        validate_progressive_plan(
+          phase, segment_plan, previous_target, checkpoint.positions);
+        segment_plans.push_back(segment_plan);
+        previous_target = checkpoint.positions;
+      }
+
+      massage_motion::MotionRequest return_request;
+      return_request.request_id = "push_progressive_first_segment_return";
+      return_request.motion_type = massage_motion::MotionType::kPtp;
+      return_request.target = massage_motion::JointTarget{
+        checkpoints.start_positions};
+      return_request.velocity_scale = velocity_scale;
+      return_request.acceleration_scale = acceleration_scale;
+      return_request.planning_timeout = planning_timeout;
+      return_request.start_state = terminal_state(
+        segment_plans.front().trajectory);
+      massage_motion::CompetitiveMotionPlanner return_planner(
+        std::vector<massage_motion::PlanningSource>{
+          {"motion_sdk", sdk, static_cast<std::size_t>(
+              ptp_planning_attempts_per_candidate)}},
+        segment_competition_config);
+      const auto return_plan = return_planner.plan(return_request);
+      log_competition(
+        node->get_logger(), "PROGRESSIVE PTP return",
+        return_planner.last_report(), progressive_maximum_segment_joint_travel,
+        robot_model);
+      if (!return_plan.success)
+      {
+        throw std::runtime_error(
+          "渐进 PTP 第一段返程预规划失败: " + return_plan.message);
+      }
+      validate_progressive_plan(
+        "PROGRESSIVE PTP return", return_plan,
+        segment_plans.front().trajectory.joint_trajectory.points.back().positions,
+        checkpoints.start_positions);
+
+      if (!execute)
+      {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "PROGRESSIVE PTP PLAN-ONLY: PASS: checkpoints=%zu, segments=%zu, "
+          "first_fraction=%.6f, first_max_joint_step=%.9f rad, "
+          "return_preplanned=true；未发送运动命令",
+          checkpoints.checkpoints.size(), segment_plans.size(),
+          checkpoints.checkpoints.front().fraction,
+          checkpoints.checkpoints.front().maximum_joint_step_from_previous);
+        exit_code = 0;
+      }
+#ifndef MASSAGE_PLAN_ONLY_BUILD
+      else if (test_mode == "reject_before_first_segment")
+      {
+        RCLCPP_INFO(
+          node->get_logger(),
+          "PROGRESSIVE PTP FAILURE INJECTION: PASS: "
+          "outbound_dispatch_count=0, return_dispatch_count=0；"
+          "第一段发送前已按测试要求拒绝");
+        exit_code = 0;
+      }
+      else
+      {
+        const auto make_expected_pose =
+          [&](const std::vector<double> & positions)
+          {
+            sensor_msgs::msg::JointState state;
+            state.name = checkpoints.joint_names;
+            state.position = positions;
+            const auto pose = massage_motion::calculate_link_pose(
+              robot_model, state, planner_config.end_effector_link);
+            if (!pose.valid)
+            {
+              throw std::runtime_error(
+                "无法计算渐进 PTP 自动验收目标 TCP: " + pose.message);
+            }
+            return pose.pose;
+          };
+        const auto first_target_pose = make_expected_pose(
+          segment_plans.front().trajectory.joint_trajectory.points.back().positions);
+        const auto original_pose = make_expected_pose(checkpoints.start_positions);
+        massage_motion::MoveItTrajectoryExecutor trajectory_executor(node);
+        std::size_t outbound_dispatch_count = 1U;
+        std::size_t return_dispatch_count = 0U;
+        const auto outbound = execute_and_verify(
+          node, trajectory_executor, "PROGRESSIVE_PTP_FIRST_OUTBOUND",
+          segment_plans.front(), robot_model, planner_config.end_effector_link,
+          first_target_pose, execution_timeout_margin, endpoint_tolerance,
+          cartesian_position_tolerance, cartesian_orientation_tolerance, false,
+          joint_state_timeout, state_mutex, state_condition, latest_state,
+          state_sequence, record_tcp_trace, recorded_states);
+        if (!outbound.success)
+        {
+          RCLCPP_ERROR(
+            node->get_logger(),
+            "渐进 PTP 第一段执行失败: outbound_dispatch_count=%zu, "
+            "return_dispatch_count=%zu",
+            outbound_dispatch_count, return_dispatch_count);
+          exit_code = 3;
+        }
+        else
+        {
+          const auto & return_start =
+            return_plan.trajectory.joint_trajectory.points.front();
+          const auto return_start_error =
+            massage_motion::calculate_joint_target_error(
+            return_plan.trajectory.joint_trajectory.joint_names,
+            return_start.positions, outbound.final_state);
+          if (!massage_motion::joint_target_reached(
+              return_start_error, endpoint_tolerance))
+          {
+            RCLCPP_ERROR(
+              node->get_logger(),
+              "渐进 PTP 返程发送前连续性失败: max_error=%.9f rad, "
+              "return_dispatch_count=0",
+              return_start_error.max_absolute_error);
+            exit_code = 3;
+          }
+          else
+          {
+            ++return_dispatch_count;
+            const auto returned = execute_and_verify(
+              node, trajectory_executor, "PROGRESSIVE_PTP_FIRST_RETURN",
+              return_plan, robot_model, planner_config.end_effector_link,
+              original_pose, execution_timeout_margin, endpoint_tolerance,
+              cartesian_position_tolerance, cartesian_orientation_tolerance,
+              false, joint_state_timeout, state_mutex, state_condition,
+              latest_state, state_sequence, record_tcp_trace, recorded_states);
+            if (!returned.success)
+            {
+              exit_code = 4;
+            }
+            else
+            {
+              RCLCPP_INFO(
+                node->get_logger(),
+                "PROGRESSIVE PTP FIRST-SEGMENT ROUND-TRIP: PASS: "
+                "first_fraction=%.6f, outbound_dispatch_count=%zu, "
+                "return_dispatch_count=%zu",
+                checkpoints.checkpoints.front().fraction,
+                outbound_dispatch_count, return_dispatch_count);
+              exit_code = 0;
+            }
+          }
+        }
+      }
+#endif
+    }
+    else
+    {
     massage_motion::MotionRequest lin_request;
     lin_request.request_id = "push_stage_b_linear";
     lin_request.motion_type = massage_motion::MotionType::kLin;
@@ -1206,6 +1620,7 @@ int main(int argc, char ** argv)
       }
     }
 #endif
+    }
   }
   catch (const YAML::Exception & exception)
   {

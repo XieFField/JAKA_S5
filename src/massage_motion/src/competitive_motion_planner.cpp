@@ -177,7 +177,11 @@ PlanResult CompetitiveMotionPlanner::plan(const MotionRequest & request)
       continue;
     }
 
-    for (std::size_t attempt = 0; attempt < source.attempts; ++attempt)
+    // The configured backend is Pilz and is deterministic for a fixed request.
+    // Repeating an identical request only adds latency; geometric diversity is
+    // provided by the explicit IK candidate layer instead.
+    constexpr std::size_t deterministic_attempts = 1U;
+    for (std::size_t attempt = 0; attempt < deterministic_attempts; ++attempt)
     {
       MotionRequest candidate_request = request;
       candidate_request.request_id = request.request_id + "_" + source.name +

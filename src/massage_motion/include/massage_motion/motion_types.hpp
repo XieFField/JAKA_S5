@@ -96,6 +96,20 @@ struct MotionRequest
   bool avoid_collisions{true};
 };
 
+// 复合业务轨迹保留每个 SDK 运动段的原始几何目标。合并轨迹仍用于整体
+// 碰撞和姿态门禁，真机执行时不能从关节采样点反推 LIN/CIRC 语义。
+struct PlannedMotionSegment
+{
+  std::string request_id;
+  MotionType motion_type{MotionType::kPtp};
+  MotionTarget target{JointTarget{}};
+  moveit_msgs::msg::RobotTrajectory trajectory;
+  double velocity_scale{0.1};
+  double acceleration_scale{0.1};
+  std::string planner_id;
+  double desired_cartesian_speed_m_s{0.0};
+};
+
 // 对外结果包含 ROS 轨迹，但不暴露 MoveGroupInterface 等具体规划器对象。
 struct PlanResult
 {
@@ -106,6 +120,7 @@ struct PlanResult
   moveit_msgs::msg::RobotTrajectory trajectory;
   double planning_time{0.0};
   std::string planner_id;
+  std::vector<PlannedMotionSegment> execution_segments;
 };
 
 // 校验结果通过统一错误码报告问题，不使用异常传递普通输入错误。
