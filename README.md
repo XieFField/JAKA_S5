@@ -527,3 +527,8 @@ git checkout <MASSAGE_PROJECT_COMMIT_OR_TAG>
 
 本项目自有代码采用 BSD-3-Clause。JAKA 官方源码、SDK 动态库、机器人模型和其他第三方
 组件继续遵循各自许可证；本项目许可证不会覆盖供应商组件。
+
+## 可选 MuJoCo 仿真
+
+新增独立 MuJoCo 后端，提供轨迹执行、TCP 交互、示教回放、接触监控和可选俯卧假人。
+安装与操作见 [MuJoCo 使用说明](MUJOCO_USAGE.md)。沿用上述双工作区结构；假人和 RViz 默认关闭。

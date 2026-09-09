@@ -31,6 +31,8 @@
   <test_depend>srdfdom</test_depend>
   <test_depend>urdf</test_depend>
 
+  <depend>pluginlib</depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

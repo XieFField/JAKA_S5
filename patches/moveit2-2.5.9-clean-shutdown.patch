@@ -1,0 +1,259 @@
+diff --git a/moveit_ros/move_group/src/move_group.cpp b/moveit_ros/move_group/src/move_group.cpp
+index 44d9818..ac386de 100644
+--- a/moveit_ros/move_group/src/move_group.cpp
++++ b/moveit_ros/move_group/src/move_group.cpp
+@@ -42,8 +42,10 @@
+ #include <boost/tokenizer.hpp>
+ #include <moveit/macros/console_colors.h>
+ #include <moveit/move_group/move_group_context.h>
++#include <csignal>
+ #include <memory>
+ #include <set>
++#include <thread>
+ 
+ static const std::string ROBOT_DESCRIPTION =
+     "robot_description";  // name of the robot description (a param name, so it can be changed externally)
+@@ -201,10 +203,8 @@ private:
+ };
+ }  // namespace move_group
+ 
+-int main(int argc, char** argv)
++int runMoveGroup(int argc, char** argv, const sigset_t& shutdown_signals)
+ {
+-  rclcpp::init(argc, argv);
+-
+   rclcpp::NodeOptions opt;
+   opt.allow_undeclared_parameters(true);
+   opt.automatically_declare_parameters_from_overrides(true);
+@@ -274,7 +274,7 @@ int main(int argc, char** argv)
+   // Initialize MoveItCpp
+   const auto tf_buffer = std::make_shared<tf2_ros::Buffer>(nh->get_clock(), tf2::durationFromSec(10.0));
+   const auto moveit_cpp = std::make_shared<moveit_cpp::MoveItCpp>(nh, moveit_cpp_options, tf_buffer);
+-  const auto planning_scene_monitor = moveit_cpp->getPlanningSceneMonitor();
++  const auto planning_scene_monitor = moveit_cpp->getPlanningSceneMonitorNonConst();
+ 
+   if (planning_scene_monitor->getPlanningScene())
+   {
+@@ -306,12 +306,37 @@ int main(int argc, char** argv)
+ 
+     mge.status();
+     executor.add_node(nh);
+-    executor.spin();
++    std::thread executor_thread([&executor]() { executor.spin(); });
+ 
+-    rclcpp::shutdown();
++    int received_signal = 0;
++    const int sigwait_result = sigwait(&shutdown_signals, &received_signal);
++    if (sigwait_result != 0)
++      RCLCPP_ERROR(LOGGER, "Failed waiting for shutdown signal: %d", sigwait_result);
++
++    executor.cancel();
++    executor_thread.join();
+   }
+   else
+     RCLCPP_ERROR(LOGGER, "Planning scene not configured");
+ 
+   return 0;
+ }
++
++int main(int argc, char** argv)
++{
++  sigset_t shutdown_signals;
++  sigemptyset(&shutdown_signals);
++  sigaddset(&shutdown_signals, SIGINT);
++  sigaddset(&shutdown_signals, SIGTERM);
++  const int mask_result = pthread_sigmask(SIG_BLOCK, &shutdown_signals, nullptr);
++  if (mask_result != 0)
++    return mask_result;
++
++  rclcpp::init(argc, argv, rclcpp::InitOptions(), rclcpp::SignalHandlerOptions::None);
++  const int result = runMoveGroup(argc, argv, shutdown_signals);
++
++  // MoveIt and its private controller node are destroyed by runMoveGroup()
++  // before the ROS context is invalidated here.
++  rclcpp::shutdown();
++  return result;
++}
+diff --git a/moveit_ros/move_group/src/move_group_context.cpp b/moveit_ros/move_group/src/move_group_context.cpp
+index cb317a0..efeb36a 100644
+--- a/moveit_ros/move_group/src/move_group_context.cpp
++++ b/moveit_ros/move_group/src/move_group_context.cpp
+@@ -46,7 +46,7 @@ move_group::MoveGroupContext::MoveGroupContext(const moveit_cpp::MoveItCppPtr& m
+                                                const std::string& default_planning_pipeline,
+                                                bool allow_trajectory_execution, bool debug)
+   : moveit_cpp_(moveit_cpp)
+-  , planning_scene_monitor_(moveit_cpp->getPlanningSceneMonitor())
++  , planning_scene_monitor_(moveit_cpp->getPlanningSceneMonitorNonConst())
+   , allow_trajectory_execution_(allow_trajectory_execution)
+   , debug_(debug)
+ {
+@@ -74,7 +74,7 @@ move_group::MoveGroupContext::MoveGroupContext(const moveit_cpp::MoveItCppPtr& m
+ 
+   if (allow_trajectory_execution_)
+   {
+-    trajectory_execution_manager_ = moveit_cpp_->getTrajectoryExecutionManager();
++    trajectory_execution_manager_ = moveit_cpp_->getTrajectoryExecutionManagerNonConst();
+     plan_execution_ = std::make_shared<plan_execution::PlanExecution>(moveit_cpp_->getNode(), planning_scene_monitor_,
+                                                                       trajectory_execution_manager_);
+   }
+diff --git a/moveit_ros/planning/moveit_cpp/include/moveit/moveit_cpp/moveit_cpp.h b/moveit_ros/planning/moveit_cpp/include/moveit/moveit_cpp/moveit_cpp.h
+index 68db705..d86b46f 100644
+--- a/moveit_ros/planning/moveit_cpp/include/moveit/moveit_cpp/moveit_cpp.h
++++ b/moveit_ros/planning/moveit_cpp/include/moveit/moveit_cpp/moveit_cpp.h
+@@ -157,13 +157,14 @@ public:
+   std::set<std::string> getPlanningPipelineNames(const std::string& group_name = "") const;
+ 
+   /** \brief Get the stored instance of the planning scene monitor */
+-  const planning_scene_monitor::PlanningSceneMonitorPtr& getPlanningSceneMonitor() const;
++  planning_scene_monitor::PlanningSceneMonitorConstPtr getPlanningSceneMonitor() const;
+   planning_scene_monitor::PlanningSceneMonitorPtr getPlanningSceneMonitorNonConst();
+ 
+-  const std::shared_ptr<tf2_ros::Buffer>& getTFBuffer() const;
++  std::shared_ptr<const tf2_ros::Buffer> getTFBuffer() const;
++  std::shared_ptr<tf2_ros::Buffer> getTFBuffer();
+ 
+   /** \brief Get the stored instance of the trajectory execution manager */
+-  const trajectory_execution_manager::TrajectoryExecutionManagerPtr& getTrajectoryExecutionManager() const;
++  trajectory_execution_manager::TrajectoryExecutionManagerConstPtr getTrajectoryExecutionManager() const;
+   trajectory_execution_manager::TrajectoryExecutionManagerPtr getTrajectoryExecutionManagerNonConst();
+ 
+   /** \brief Execute a trajectory on the planning group specified by group_name using the trajectory execution manager.
+@@ -175,7 +176,6 @@ public:
+ private:
+   //  Core properties and instances
+   rclcpp::Node::SharedPtr node_;
+-  moveit::core::RobotModelConstPtr robot_model_;
+   planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
+ 
+   // Planning
+@@ -186,9 +186,6 @@ private:
+   // Execution
+   trajectory_execution_manager::TrajectoryExecutionManagerPtr trajectory_execution_manager_;
+ 
+-  /** \brief Reset all member variables */
+-  void clearContents();
+-
+   /** \brief Initialize and setup the planning scene monitor */
+   bool loadPlanningSceneMonitor(const PlanningSceneMonitorOptions& options);
+ 
+diff --git a/moveit_ros/planning/moveit_cpp/src/moveit_cpp.cpp b/moveit_ros/planning/moveit_cpp/src/moveit_cpp.cpp
+index c8dd4ea..df46912 100644
+--- a/moveit_ros/planning/moveit_cpp/src/moveit_cpp.cpp
++++ b/moveit_ros/planning/moveit_cpp/src/moveit_cpp.cpp
+@@ -60,8 +60,7 @@ MoveItCpp::MoveItCpp(const rclcpp::Node::SharedPtr& node, const Options& options
+     throw std::runtime_error(error);
+   }
+ 
+-  robot_model_ = planning_scene_monitor_->getRobotModel();
+-  if (!robot_model_)
++  if (!getRobotModel())
+   {
+     const std::string error = "Unable to construct robot model. Please make sure all needed information is on the "
+                               "parameter server.";
+@@ -78,7 +77,7 @@ MoveItCpp::MoveItCpp(const rclcpp::Node::SharedPtr& node, const Options& options
+   }
+ 
+   trajectory_execution_manager_ = std::make_shared<trajectory_execution_manager::TrajectoryExecutionManager>(
+-      node_, robot_model_, planning_scene_monitor_->getStateMonitor());
++      node_, getRobotModel(), planning_scene_monitor_->getStateMonitor());
+ 
+   RCLCPP_DEBUG(LOGGER, "MoveItCpp running");
+ }
+@@ -86,7 +85,6 @@ MoveItCpp::MoveItCpp(const rclcpp::Node::SharedPtr& node, const Options& options
+ MoveItCpp::~MoveItCpp()
+ {
+   RCLCPP_INFO(LOGGER, "Deleting MoveItCpp");
+-  clearContents();
+ }
+ 
+ bool MoveItCpp::loadPlanningSceneMonitor(const PlanningSceneMonitorOptions& options)
+@@ -138,7 +136,7 @@ bool MoveItCpp::loadPlanningPipelines(const PlanningPipelineOptions& options)
+     }
+     RCLCPP_INFO(LOGGER, "Loading planning pipeline '%s'", planning_pipeline_name.c_str());
+     planning_pipeline::PlanningPipelinePtr pipeline;
+-    pipeline = std::make_shared<planning_pipeline::PlanningPipeline>(robot_model_, node_, planning_pipeline_name,
++    pipeline = std::make_shared<planning_pipeline::PlanningPipeline>(getRobotModel(), node_, planning_pipeline_name,
+                                                                      PLANNING_PLUGIN_PARAM);
+ 
+     if (!pipeline->getPlannerManager())
+@@ -157,7 +155,7 @@ bool MoveItCpp::loadPlanningPipelines(const PlanningPipelineOptions& options)
+   }
+ 
+   // Retrieve group/pipeline mapping for faster lookup
+-  std::vector<std::string> group_names = robot_model_->getJointModelGroupNames();
++  std::vector<std::string> group_names = getRobotModel()->getJointModelGroupNames();
+   for (const auto& pipeline_entry : planning_pipelines_)
+   {
+     for (const auto& group_name : group_names)
+@@ -178,7 +176,7 @@ bool MoveItCpp::loadPlanningPipelines(const PlanningPipelineOptions& options)
+ 
+ moveit::core::RobotModelConstPtr MoveItCpp::getRobotModel() const
+ {
+-  return robot_model_;
++  return planning_scene_monitor_->getRobotModel();
+ }
+ 
+ const rclcpp::Node::SharedPtr& MoveItCpp::getNode() const
+@@ -224,7 +222,7 @@ std::set<std::string> MoveItCpp::getPlanningPipelineNames(const std::string& gro
+   return groups_pipelines_map_.at(group_name);
+ }
+ 
+-const planning_scene_monitor::PlanningSceneMonitorPtr& MoveItCpp::getPlanningSceneMonitor() const
++planning_scene_monitor::PlanningSceneMonitorConstPtr MoveItCpp::getPlanningSceneMonitor() const
+ {
+   return planning_scene_monitor_;
+ }
+@@ -234,7 +232,7 @@ planning_scene_monitor::PlanningSceneMonitorPtr MoveItCpp::getPlanningSceneMonit
+   return planning_scene_monitor_;
+ }
+ 
+-const trajectory_execution_manager::TrajectoryExecutionManagerPtr& MoveItCpp::getTrajectoryExecutionManager() const
++trajectory_execution_manager::TrajectoryExecutionManagerConstPtr MoveItCpp::getTrajectoryExecutionManager() const
+ {
+   return trajectory_execution_manager_;
+ }
+@@ -274,15 +272,13 @@ MoveItCpp::execute(const std::string& group_name, const robot_trajectory::RobotT
+   return moveit_controller_manager::ExecutionStatus::RUNNING;
+ }
+ 
+-const std::shared_ptr<tf2_ros::Buffer>& MoveItCpp::getTFBuffer() const
++std::shared_ptr<const tf2_ros::Buffer> MoveItCpp::getTFBuffer() const
+ {
+   return planning_scene_monitor_->getTFClient();
+ }
+ 
+-void MoveItCpp::clearContents()
++std::shared_ptr<tf2_ros::Buffer> MoveItCpp::getTFBuffer()
+ {
+-  planning_scene_monitor_.reset();
+-  robot_model_.reset();
+-  planning_pipelines_.clear();
++  return planning_scene_monitor_->getTFClient();
+ }
+ }  // namespace moveit_cpp
+diff --git a/moveit_ros/planning/trajectory_execution_manager/src/trajectory_execution_manager.cpp b/moveit_ros/planning/trajectory_execution_manager/src/trajectory_execution_manager.cpp
+index 440717a..374f868 100644
+--- a/moveit_ros/planning/trajectory_execution_manager/src/trajectory_execution_manager.cpp
++++ b/moveit_ros/planning/trajectory_execution_manager/src/trajectory_execution_manager.cpp
+@@ -77,10 +77,20 @@ TrajectoryExecutionManager::~TrajectoryExecutionManager()
+ {
+   run_continuous_execution_thread_ = false;
+   stopExecution(true);
+-  private_executor_->cancel();
++  if (private_executor_)
++    private_executor_->cancel();
+   if (private_executor_thread_.joinable())
+     private_executor_thread_.join();
+   private_executor_.reset();
++
++  // Controller handles and callback groups can contain code owned by the
++  // controller-manager plugin. Release all of them before unloading it.
++  callback_handler_.reset();
++  active_handles_.clear();
++  known_controllers_.clear();
++  controller_manager_.reset();
++  controller_mgr_node_.reset();
++  controller_manager_loader_.reset();
+ }
+ 
+ void TrajectoryExecutionManager::initialize()

@@ -1,0 +1,10 @@
+# Default simulation joint positions in radians:
+# [-180, 90, -90, 90, 90, -75] degrees.
+
+initial_positions:
+  joint_1: -3.141592653589793
+  joint_2: 1.5707963267948966
+  joint_3: -1.5707963267948966
+  joint_4: 1.5707963267948966
+  joint_5: 1.5707963267948966
+  joint_6: -1.3089969389957472

@@ -6,6 +6,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(pluginlib REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -24,6 +25,11 @@ find_package(tf2_ros REQUIRED)
 find_package(trajectory_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
+
+add_library(massage_mujoco_servo_smoothing SHARED src/mujoco_servo_smoothing.cpp)
+ament_target_dependencies(massage_mujoco_servo_smoothing moveit_core pluginlib rclcpp)
+pluginlib_export_plugin_description_file(moveit_core mujoco_servo_smoothing.xml)
+install(TARGETS massage_mujoco_servo_smoothing LIBRARY DESTINATION lib)
 
 # add library
 add_library(${PROJECT_NAME}
@@ -128,6 +134,10 @@ add_massage_motion_demo(
   tf2
   tf2_ros
 )
+
+add_massage_motion_demo(cartesian_jog_bridge geometry_msgs std_msgs std_srvs tf2 tf2_geometry_msgs tf2_ros)
+add_massage_motion_demo(cartesian_jog_keyboard geometry_msgs)
+install(TARGETS cartesian_jog_bridge cartesian_jog_keyboard DESTINATION lib/${PROJECT_NAME})
 
 # 安装并导出公共头文件和库目标，使其他 ament 包可以通过
 # find_package(massage_motion) 使用本库。

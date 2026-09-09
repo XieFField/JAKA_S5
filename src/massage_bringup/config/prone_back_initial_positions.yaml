@@ -1,0 +1,9 @@
+# Reachable pose above the center of the prone mannequin's back.
+# massage_tool_tip = [0.65, -0.10, 0.50] m, tool +Z points world -Z.
+initial_positions:
+  joint_1: -0.3261382464
+  joint_2: 0.9856494757
+  joint_3: -0.3496313750
+  joint_4: 0.9347818994
+  joint_5: 1.5707926536
+  joint_6: 1.2446617536

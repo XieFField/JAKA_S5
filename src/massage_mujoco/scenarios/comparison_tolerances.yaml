@@ -1,0 +1,4 @@
+# Absolute differences; choose experiment-appropriate values for each backend.
+# These defaults target the low-force pad experiment, not arbitrary trajectories.
+final_error: 0.01
+final_contact_force: 0.05

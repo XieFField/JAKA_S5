@@ -1,0 +1,33 @@
+# rqt_plot field paths. Joint index is zero-based in ROS arrays.
+joint:
+  - /jaka_s5_controller/controller_state/reference/positions[{joint}]
+  - /jaka_s5_controller/controller_state/feedback/positions[{joint}]
+  - /jaka_s5_controller/controller_state/error/positions[{joint}]
+effort:
+  - /joint_states/effort[0]
+  - /joint_states/effort[1]
+  - /joint_states/effort[2]
+  - /joint_states/effort[3]
+  - /joint_states/effort[4]
+  - /joint_states/effort[5]
+force:
+  - /massage_ft_broadcaster/wrench/wrench/force/x
+  - /massage_ft_broadcaster/wrench/wrench/force/y
+  - /massage_ft_broadcaster/wrench/wrench/force/z
+torque:
+  - /massage_ft_broadcaster/wrench/wrench/torque/x
+  - /massage_ft_broadcaster/wrench/wrench/torque/y
+  - /massage_ft_broadcaster/wrench/wrench/torque/z
+contact:
+  - /massage_mujoco/contact_state/normal_force
+tcp_position:
+  - /massage_mujoco/tcp/target_pose/pose/position/x
+  - /massage_mujoco/tcp/target_pose/pose/position/y
+  - /massage_mujoco/tcp/target_pose/pose/position/z
+  - /massage_mujoco/tcp/actual_pose/pose/position/x
+  - /massage_mujoco/tcp/actual_pose/pose/position/y
+  - /massage_mujoco/tcp/actual_pose/pose/position/z
+tcp_velocity:
+  - /massage_mujoco/tcp/actual_velocity/twist/linear/x
+  - /massage_mujoco/tcp/actual_velocity/twist/linear/y
+  - /massage_mujoco/tcp/actual_velocity/twist/linear/z

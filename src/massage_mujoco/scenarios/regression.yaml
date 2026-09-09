@@ -1,0 +1,49 @@
+version: 1
+repeat: 2
+determinism_tolerance: 1.0e-10
+# SI units; time is simulation time. Overrides apply to MuJoCo configuration only.
+scenarios:
+  - name: ready_pose
+    duration: 1.0
+    sweep:
+      collision_geometry: [mesh, box]
+    assertions:
+      final_error: {max: 0.001}
+      peak_contact_force: {max: 0.0}
+      max_penetration: {max: 0.0}
+  - name: small_trajectory
+    duration: 3.0
+    trajectory:
+      - time: 1.0
+        delta: [0.02, -0.02, 0.02, -0.02, -0.02, 0.02]
+    assertions:
+      final_error: {max: 0.005}
+      peak_error: {max: 0.03}
+      max_penetration: {max: 0.0}
+  - name: tool_load
+    duration: 3.0
+    external_wrenches:
+      - start: 0.5
+        end: 1.5
+        force: [0.0, 0.0, 1.0]
+        torque: [0.0, 0.0, 0.0]
+    assertions:
+      final_error: {max: 0.005}
+      peak_ft_force: {min: 1.0, max: 10.0}
+  - name: slow_contact
+    duration: 9.0
+    required_events: [CONTACT_STARTED]
+    initial_positions: [-0.0150542703, 0.439740469, -0.667101116, 0.227360592, -0.0150542703, 0.0000009447]
+    trajectory:
+      - time: 3.0
+        positions: [-0.0150542703, 0.439740469, -0.667101116, 0.227360592, -0.0150542703, 0.0000009447]
+      - time: 6.0
+        positions: [-0.0224084984, 0.442422977, -0.672689985, 0.230266926, -0.0224084984, 0.0000009178]
+    sweep:
+      contact_pad.stiffness: [500.0, 600.0]
+    assertions:
+      final_error: {max: 0.005}
+      final_contact_force: {min: 0.15, max: 0.3}
+      peak_contact_force: {max: 1.0}
+      max_penetration: {max: 0.001}
+      unexpected_contact_samples: {max: 0}

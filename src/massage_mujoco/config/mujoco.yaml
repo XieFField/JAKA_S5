@@ -1,0 +1,80 @@
+simulation:
+  timestep: 0.001
+  integrator: implicitfast
+  solver: Newton
+  iterations: 100
+
+# These are simulation servo gains, not manufacturer-verified drive gains.
+position_actuators:
+  gravity_compensation: true
+  damping_ratio: 1.0
+  kp:
+    joint_1: 1000.0
+    joint_2: 1000.0
+    joint_3: 1000.0
+    joint_4: 500.0
+    joint_5: 300.0
+    joint_6: 200.0
+
+# Geometry and joint mechanics mirror ft_contact_test.sdf. MuJoCo contact
+# impedance and torsional/rolling friction have no Gazebo equivalent and are
+# explicit backend tuning values.
+contact_pad:
+  position: [0.75, -0.15, 0.106382]
+  size: [0.20, 0.10, 0.10]
+  mass: 2.0
+  axis: [0.0, 1.0, 0.0]
+  joint_range: [-0.03, 0.005]
+  stiffness: 500.0
+  damping: 20.0
+  friction: [0.5, 0.005, 0.0001]
+  solref: [0.02, 1.0]
+  solimp: [0.9, 0.95, 0.001, 0.5, 2.0]
+
+# Procedural prone mannequin. The local back material is intentionally soft and
+# stable for controller development; it is not calibrated human tissue data.
+prone_mannequin:
+  back_center: [0.65, -0.10, 0.425]
+  back_size: [0.32, 0.45, 0.05]
+  back_grid_count: [5, 7, 3]
+  back_mass: 10.0
+  back_radius: 0.008
+  back_young: 1000.0
+  back_poisson: 0.30
+  back_damping: 0.10
+  back_friction: [0.8, 0.01, 0.001]
+  layout:
+    massage_table:
+      center_offset: [0.0, -0.18, -0.185]
+      half_size: [0.43, 0.82, 0.055]
+    torso_core:
+      center_offset: [0.0, 0.0, -0.075]
+      half_size: [0.19, 0.29, 0.075]
+    pelvis:
+      center_offset: [0.0, -0.39, -0.075]
+      half_size: [0.20, 0.16, 0.075]
+    head:
+      center_offset: [0.0, 0.37, -0.055]
+      half_size: [0.105, 0.13, 0.095]
+    arms:
+      x_offsets: [-0.245, 0.245]
+      start_offset: [0.0, 0.20, -0.09]
+      end_offset: [0.0, -0.30, -0.09]
+      radius: 0.052
+    legs:
+      x_offsets: [-0.105, 0.105]
+      start_offset: [0.0, -0.48, -0.08]
+      end_offset: [0.0, -0.95, -0.10]
+      radius: 0.068
+
+# mesh preserves the baseline; box uses conservative mesh-enclosing proxies.
+# Proxy geometry is group 3 (hidden in Viewer by default), STL stays visible.
+collision_geometry: mesh
+
+# Simulation diagnostics only; these are NOT validated human-contact limits.
+contact_monitor:
+  tool_body: massage_head_link
+  target_body: contact_pad
+  contact_force: 0.05  # N
+  over_force: 20.0  # N
+  impact_force_rate: 200.0  # N/s, sampled at ROS state update frequency

@@ -1,0 +1,7 @@
+<library path="massage_mujoco_servo_smoothing">
+  <class name="massage_motion/MujocoServoSmoothing"
+         type="massage_motion::MujocoServoSmoothing"
+         base_class_type="online_signal_smoothing::SmoothingBaseClass">
+    <description>Pass positions through for the MuJoCo velocity-stream executor.</description>
+  </class>
+</library>
