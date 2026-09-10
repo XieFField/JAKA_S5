@@ -1,0 +1,20 @@
+std_msgs/Header header
+
+int32 robot_status_result
+int32 servo_status_result
+int32 collision_status_result
+int32 emergency_stop_status_result
+int32 soft_limit_status_result
+
+int32 error_code
+string error_message
+bool powered_on
+bool enabled
+bool in_servo_mode
+bool in_collision
+bool emergency_stop
+bool on_soft_limit
+bool motion_goal_active
+
+bool disable_event
+string disable_reason
