@@ -124,6 +124,28 @@ massage_robot_ws/
     └── massage_bringup/     # 仿真/真机启动与控制器配置
 ```
 
+### 独立关节控制器
+
+`src/control` 提供一套独立的 JAKA S5 Qt 关节控制器，包括控制器专用消息、
+JAKA SDK 运行库封装、运动服务和启动文件。它不替换现有的 `massage_*` 包。
+
+```bash
+cd ~/robot_project/massage_robot_ws
+source /opt/ros/humble/setup.bash
+source ~/robot_project/jaka_ros2/install/setup.bash
+colcon build --packages-up-to control_s5_controller --symlink-install
+source install/setup.bash
+
+ros2 launch control_s5_controller s5_joint_controller.launch.py \
+  ip:=192.168.66.200 \
+  use_rviz:=false \
+  auto_move_to_initial_on_start:=false
+```
+
+真机运行时，`control_s5_controller` 的运动服务独占 JAKA SDK 连接。不要让它与
+`jaka_driver` 同时连接同一台机器人。首次验证必须保持
+`auto_move_to_initial_on_start:=false`，确认关节状态和急停条件后再下发运动。
+
 运行时边界：
 
 ```text

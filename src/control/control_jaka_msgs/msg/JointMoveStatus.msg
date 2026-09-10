@@ -1,0 +1,22 @@
+uint8 STATE_STARTING=0
+uint8 STATE_RUNNING=1
+uint8 STATE_SUCCEEDED=2
+uint8 STATE_CANCELED=3
+uint8 STATE_STALLED=4
+uint8 STATE_TIMED_OUT=5
+uint8 STATE_FAILED=6
+
+std_msgs/Header header
+uint8 state
+float64 velocity_scaling
+float64 acceleration_scaling
+float64 command_speed_rad_s
+float64 command_acceleration_rad_s2
+float64 controller_rapidrate
+float64 estimated_effective_speed_rad_s
+float64 remaining_error_rad
+float64 elapsed_s
+float64 stall_elapsed_s
+float64 hard_timeout_remaining_s
+int32 error_code
+string message

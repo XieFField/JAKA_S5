@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>control_jaka_sdk_vendor</name>
+  <version>2.2.2</version>
+  <description>Build-system wrapper for the JAKA C++ SDK used by the S5 controller</description>
+  <maintainer email="1744054618@qq.com">mapetsss</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>control_s5_controller</name>
+  <version>0.1.0</version>
+  <description>Qt and SDK-based joint controller for the JAKA S5</description>
+  <maintainer email="1744054618@qq.com">mapetsss</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>builtin_interfaces</depend>
+  <depend>control_jaka_msgs</depend>
+  <depend>control_jaka_sdk_vendor</depend>
+  <depend>control_msgs</depend>
+  <depend>qtbase5-dev</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>jaka_s5_moveit_config</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

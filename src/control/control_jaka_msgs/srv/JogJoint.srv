@@ -1,0 +1,8 @@
+uint8 joint_index
+int8 direction
+float64 speed_rad_s
+float64 step_rad
+---
+bool success
+int32 error_code
+string message
